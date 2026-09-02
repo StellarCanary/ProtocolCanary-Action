@@ -146,6 +146,22 @@ describe("Action end-to-end (via mock-canary)", () => {
     expect(fs.readFileSync(fixture.summaryPath, "utf8")).toContain("✅ **PASS**");
   });
 
+  // Regression test: found during three-repository E2E validation against
+  // a real build of Protocol-Canary's actual tagged v0.1.0 release, whose
+  // report predates the `counts` field. Without this, every check against
+  // that release — even a fully passing one — was misreported as an
+  // execution failure.
+  it("pass-no-counts: a schemaVersion-1 report missing counts still parses as a real pass", async () => {
+    fixture = setUp("pass-no-counts");
+    const { run } = await import("../../src/main");
+    await run();
+
+    expect(setFailedMock).not.toHaveBeenCalled();
+    const outputs = readOutputs(fixture.outputPath);
+    expect(outputs.status).toBe("pass");
+    expect(outputs.passed).toBe("1");
+  });
+
   it("warning: does not fail the job (default policy), but does annotate", async () => {
     fixture = setUp("warning");
     const { run } = await import("../../src/main");

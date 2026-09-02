@@ -6,8 +6,8 @@
  * the MOCK_CANARY_SCENARIO environment variable; MOCK_CANARY_VERSION
  * overrides the version string reported by `version`.
  *
- * Supported scenarios: pass, warning, fail, config-error, rpc-error,
- * fixture-error, internal-error, malformed-json, timeout.
+ * Supported scenarios: pass, pass-no-counts, warning, fail, config-error,
+ * rpc-error, fixture-error, internal-error, malformed-json, timeout.
  */
 "use strict";
 
@@ -70,6 +70,28 @@ switch (scenario) {
       }),
       0,
     );
+    break;
+  }
+
+  case "pass-no-counts": {
+    // Simulates Protocol-Canary's actual tagged v0.1.0 release, whose
+    // schemaVersion-1 report predates the `counts` field.
+    const report = baseReport({
+      status: "pass",
+      results: [
+        {
+          testId: "p28-xdr-cap83-empty-tx-set",
+          protocol: 28,
+          surface: "xdr",
+          status: "pass",
+          summary: "StellarValue round-tripped byte-for-byte",
+          durationMs: 1,
+          fixtureId: "p28-xdr-cap83-empty-tx-set",
+        },
+      ],
+    });
+    delete report.counts;
+    emit(report, 0);
     break;
   }
 

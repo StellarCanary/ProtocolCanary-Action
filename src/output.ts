@@ -30,6 +30,15 @@ export interface CanarySkip {
   readonly reason: string;
 }
 
+export interface CanaryCounts {
+  readonly total: number;
+  readonly passed: number;
+  readonly failed: number;
+  readonly warnings: number;
+  readonly errors: number;
+  readonly skipped: number;
+}
+
 export interface CanaryReport {
   readonly schemaVersion: number;
   readonly toolVersion: string;
@@ -37,14 +46,7 @@ export interface CanaryReport {
   readonly project: { readonly name: string; readonly type: string };
   readonly network?: { readonly name: string; readonly observedProtocol?: number };
   readonly status: OverallStatus;
-  readonly counts: {
-    readonly total: number;
-    readonly passed: number;
-    readonly failed: number;
-    readonly warnings: number;
-    readonly errors: number;
-    readonly skipped: number;
-  };
+  readonly counts: CanaryCounts;
   readonly results: readonly CanaryResult[];
   readonly skipped?: readonly CanarySkip[];
   readonly git: {
@@ -52,6 +54,43 @@ export interface CanaryReport {
     readonly branch: string | null;
     readonly isDirty: boolean | null;
   };
+}
+
+function isCountsShape(value: unknown): value is CanaryCounts {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<CanaryCounts>;
+  return (
+    typeof candidate.total === "number" &&
+    typeof candidate.passed === "number" &&
+    typeof candidate.failed === "number" &&
+    typeof candidate.warnings === "number" &&
+    typeof candidate.errors === "number" &&
+    typeof candidate.skipped === "number"
+  );
+}
+
+/**
+ * `counts` is documented as "purely a convenience — always re-derivable
+ * from results[].status" and, like `git`, was added to the report schema
+ * after schemaVersion 1 was first shipped without bumping it (a purely
+ * additive field). An older Canary release's report predating that
+ * addition is still schemaVersion 1 and still fully valid; reject it here
+ * and every check against that release fails as an "execution failure"
+ * even when Canary itself reported a real pass. Derive `counts` from
+ * `results`/`skipped` instead of requiring the CLI to have sent it.
+ */
+function deriveCounts(results: readonly CanaryResult[], skipped: readonly CanarySkip[] | undefined): CanaryCounts {
+  const counts: { total: number; passed: number; failed: number; warnings: number; errors: number; skipped: number } =
+    { total: results.length, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: skipped?.length ?? 0 };
+  for (const result of results) {
+    if (result.status === "pass") counts.passed += 1;
+    else if (result.status === "fail") counts.failed += 1;
+    else if (result.status === "warning") counts.warnings += 1;
+    else if (result.status === "error") counts.errors += 1;
+  }
+  return counts;
 }
 
 /**
@@ -92,14 +131,16 @@ export function parseReport(stdout: string): CanaryReport {
   if (
     typeof report.status !== "string" ||
     !["pass", "warning", "fail", "error"].includes(report.status) ||
-    !Array.isArray(report.results) ||
-    typeof report.counts !== "object" ||
-    report.counts === null
+    !Array.isArray(report.results)
   ) {
     throw new InvalidReportError("Canary's JSON output does not match the documented report shape.");
   }
 
-  return report as CanaryReport;
+  const results = report.results as CanaryResult[];
+  const skipped = report.skipped as CanarySkip[] | undefined;
+  const counts = isCountsShape(report.counts) ? report.counts : deriveCounts(results, skipped);
+
+  return { ...report, results, skipped, counts } as CanaryReport;
 }
 
 export type ExitCodeCategory =
