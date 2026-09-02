@@ -33,7 +33,7 @@ describe("getInputs", () => {
       network: undefined,
       rpcUrl: undefined,
       fixturesDir: "fixtures",
-      version: "0.1.0",
+      version: "0.1.1",
       uploadReport: true,
       annotations: true,
       timeoutMinutes: 15,

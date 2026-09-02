@@ -27,7 +27,7 @@ export function getInputs(): ActionInputs {
   const network = optional(core.getInput("network"));
   const rpcUrl = parseRpcUrl(core.getInput("rpc-url"));
   const fixturesDir = core.getInput("fixtures-dir") || "fixtures";
-  const version = parseVersion(core.getInput("version") || "0.1.0");
+  const version = parseVersion(core.getInput("version") || "0.1.1");
   const uploadReport = parseBoolean("upload-report", core.getInput("upload-report") || "true");
   const annotations = parseBoolean("annotations", core.getInput("annotations") || "true");
   const timeoutMinutes = parseTimeout(core.getInput("timeout-minutes") || "15");

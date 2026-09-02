@@ -70,7 +70,7 @@ jobs:
 | `network` | Network for live RPC/Soroban checks (`--network`). | `testnet` (CLI default) |
 | `rpc-url` | Stellar RPC endpoint (`--rpc-url`). Must be `https://`, or `http://localhost`/`127.0.0.1` for local development. | (none) |
 | `fixtures-dir` | Path to a directory of fixtures, e.g. a checkout of `ProtocolCanary-Fixtures` (`--fixtures-dir`). | `fixtures` |
-| `version` | `Protocol-Canary` version to install, without a leading `v`. Pinned — never tracks `main`. | `0.1.0` |
+| `version` | `Protocol-Canary` version to install, without a leading `v`. Pinned — never tracks `main`. | `0.1.1` |
 | `upload-report` | Upload the JSON report as a workflow artifact. | `true` |
 | `annotations` | Emit GitHub annotations for failures/warnings/errors. | `true` |
 | `timeout-minutes` | Maximum time to let Canary run before it is terminated. | `15` |
@@ -139,7 +139,7 @@ at the latest `v1.x.y` release, per standard GitHub Actions convention. The
 
 | Action | Protocol-Canary |
 |---|---|
-| v1 | `0.1.0` (the only tagged release at time of writing) |
+| v1 | `0.1.1` (default; `0.1.0` also installable, but predates the `ContractExecutable` XDR type two current Protocol 28 fixtures require, and its report predates the `counts` field) |
 
 This table will grow as `Protocol-Canary` cuts new releases; a
 `schemaVersion` change to its JSON report is a breaking change for this

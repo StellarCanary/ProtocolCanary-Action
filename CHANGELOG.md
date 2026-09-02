@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Default `version` input bumped from `0.1.0` to `0.1.1`. Protocol-Canary
+  `v0.1.1` adds `ContractExecutable` XDR type support, which 2 of the 5
+  current `ProtocolCanary-Fixtures` Protocol 28 fixtures require and
+  `v0.1.0` cannot parse at all. Found and closed during three-repository
+  E2E validation.
+
 ### Fixed
 
 - `parseReport` no longer rejects a schemaVersion-1 report that omits the
