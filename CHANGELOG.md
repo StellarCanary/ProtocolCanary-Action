@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.0]
+
 - `stellar-canary check --format json` integration: typed input handling,
   pinned-commit installation via `cargo install --git` (no prebuilt
   release binaries exist upstream yet), safe subprocess execution with a
