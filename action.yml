@@ -1,0 +1,105 @@
+name: Stellar Protocol Canary
+description: >-
+  Run Stellar protocol compatibility checks (XDR, RPC, Soroban) against the
+  real Protocol-Canary CLI and report the result as a GitHub job summary,
+  annotations, and a downloadable JSON artifact.
+author: StellarCanary
+
+branding:
+  icon: shield
+  color: yellow
+
+inputs:
+  protocol:
+    description: >-
+      Target Stellar protocol version to check compatibility against
+      (forwarded as `stellar-canary check --protocol`). If omitted, the
+      CLI uses the `protocol` field from the project's
+      `.stellar-canary.toml`, or 28 if there is no configuration file.
+    required: false
+
+  config:
+    description: >-
+      Path to a `.stellar-canary.toml` configuration file, relative to the
+      workflow's working directory. If omitted, the CLI looks for
+      `.stellar-canary.toml` in the project root. If a path is given and
+      the file does not exist, the Action fails before invoking Canary.
+    required: false
+
+  network:
+    description: >-
+      Stellar network to run live RPC/Soroban checks against (for example
+      `testnet`, `futurenet`, or `mainnet`). Forwarded as `--network`.
+      Ignored if the project's configuration disables both RPC and
+      Soroban checks.
+    required: false
+
+  rpc-url:
+    description: >-
+      Stellar RPC endpoint to use for live checks. Forwarded as
+      `--rpc-url`. Required by the CLI for networks without a built-in
+      default endpoint. Must be an `https://` URL (plain `http://` is
+      only accepted for `localhost`/`127.0.0.1`).
+    required: false
+
+  fixtures-dir:
+    description: >-
+      Path to the directory of compatibility fixtures (for example a
+      checkout of `StellarCanary/ProtocolCanary-Fixtures`), forwarded as
+      `--fixtures-dir`. Defaults to `fixtures` relative to the working
+      directory, matching the CLI's own default.
+    required: false
+    default: fixtures
+
+  version:
+    description: >-
+      Protocol Canary version to install and run, without a leading `v`
+      (for example `0.1.0`). This must match a real release tag on
+      `StellarCanary/Protocol-Canary`. Reproducibility matters: this
+      Action never tracks `main` or an unpinned "latest" build.
+    required: false
+    default: 0.1.0
+
+  upload-report:
+    description: >-
+      Upload the machine-readable JSON report as a workflow artifact
+      named `stellar-protocol-canary-report`. Artifact upload is
+      auxiliary: a failure to upload never changes the underlying
+      compatibility result.
+    required: false
+    default: "true"
+
+  annotations:
+    description: >-
+      Convert compatibility failures, warnings, and execution errors into
+      GitHub Actions annotations.
+    required: false
+    default: "true"
+
+  timeout-minutes:
+    description: >-
+      Maximum time to let the Canary process run before it is terminated
+      and the Action fails with a timeout error.
+    required: false
+    default: "15"
+
+outputs:
+  status:
+    description: >-
+      Overall result reported by Canary: `pass`, `warning`, `fail`,
+      `error`, or `execution-failed` (set by the Action itself when
+      Canary could not produce a report at all).
+  passed:
+    description: Number of checks that passed.
+  warnings:
+    description: Number of checks that produced a warning.
+  failures:
+    description: Number of checks that failed a compatibility assertion.
+  errors:
+    description: Number of checks that could not complete due to an execution error.
+  report:
+    description: Absolute path to the generated JSON report file.
+
+runs:
+  using: node24
+  main: dist/index.js

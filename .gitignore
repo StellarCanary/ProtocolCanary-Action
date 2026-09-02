@@ -1,0 +1,8 @@
+node_modules/
+lib/
+coverage/
+*.log
+.DS_Store
+
+# dist/ is intentionally NOT ignored: it is the compiled, committed
+# distribution the Action runs from (see CONTRIBUTING.md).

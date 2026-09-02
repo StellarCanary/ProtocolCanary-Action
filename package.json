@@ -1,0 +1,32 @@
+{
+  "name": "protocolcanary-action",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Official GitHub Actions integration for Stellar Protocol Canary.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src tests"
+  },
+  "dependencies": {
+    "@actions/artifact": "^6.2.1",
+    "@actions/cache": "^6.2.0",
+    "@actions/core": "^3.0.1",
+    "@actions/exec": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.9.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^4.1.11"
+  }
+}
