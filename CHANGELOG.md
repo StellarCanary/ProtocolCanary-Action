@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `parseReport` no longer rejects a schemaVersion-1 report that omits the
+  `counts` field. Protocol-Canary's actual tagged `v0.1.0` release (this
+  Action's pinned default) predates `counts`, so every check against it —
+  even a fully passing one — was previously misreported as an execution
+  failure. Found during three-repository E2E validation; `counts` is now
+  derived from `results`/`skipped` when absent.
+
 ## [0.1.0]
 
 - `stellar-canary check --format json` integration: typed input handling,
