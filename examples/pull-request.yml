@@ -1,0 +1,33 @@
+# Gate pull requests on Stellar protocol compatibility, with the JSON
+# report uploaded as an artifact for later inspection.
+name: Stellar Compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stellar Protocol Canary
+        id: canary
+        uses: StellarCanary/ProtocolCanary-Action@v1
+        with:
+          protocol: "28"
+          upload-report: "true"
+
+      # Optional: use the Action's own outputs elsewhere in the workflow.
+      - name: Show result
+        if: always()
+        run: |
+          echo "status: ${{ steps.canary.outputs.status }}"
+          echo "passed: ${{ steps.canary.outputs.passed }}"
+          echo "failures: ${{ steps.canary.outputs.failures }}"

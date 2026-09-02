@@ -1,0 +1,21 @@
+# Minimal usage: check the current repository against the protocol
+# declared in its own .stellar-canary.toml (or protocol 28 if there is no
+# configuration file), using fixtures from a local `fixtures/` directory.
+name: Stellar Compatibility
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stellar Protocol Canary
+        uses: StellarCanary/ProtocolCanary-Action@v1
