@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.1]
+
 ### Changed
 
 - Default `version` input bumped from `0.1.0` to `0.1.1`. Protocol-Canary
