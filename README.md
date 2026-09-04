@@ -1,5 +1,9 @@
 # ProtocolCanary-Action
 
+[![CI](https://github.com/StellarCanary/ProtocolCanary-Action/actions/workflows/ci.yml/badge.svg)](https://github.com/StellarCanary/ProtocolCanary-Action/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/StellarCanary/ProtocolCanary-Action)](https://github.com/StellarCanary/ProtocolCanary-Action/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 The official GitHub Actions integration for [Stellar Protocol
 Canary](https://github.com/StellarCanary/Protocol-Canary). It makes Stellar
 protocol compatibility testing a normal part of GitHub CI.
