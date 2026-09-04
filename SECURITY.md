@@ -90,6 +90,13 @@ author chooses to pass.
 Only the latest released `0.x` minor version of this Action receives
 security fixes while it is pre-1.0.
 
+## Audit status
+
+No formal third-party security audit has been performed on this
+repository. Confidence in the claims above comes from the implementation
+(argument-array subprocess execution, no shell interpolation, pinned
+commit installation) and its test suite, not from an external review.
+
 ## Reporting a vulnerability
 
 Please open a private report via GitHub's "Report a vulnerability" feature
