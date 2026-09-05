@@ -168,6 +168,10 @@ submission, `contents: read` is sufficient permission, and Canary
 arguments are always passed as an array — never interpolated into a shell
 string.
 
+## Code of Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
