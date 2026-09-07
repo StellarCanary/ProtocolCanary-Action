@@ -8,6 +8,10 @@ The official GitHub Actions integration for [Stellar Protocol
 Canary](https://github.com/StellarCanary/Protocol-Canary). It makes Stellar
 protocol compatibility testing a normal part of GitHub CI.
 
+[Documentation](https://stellarcanary.github.io/Protocol-Canary/) | [Protocol-Canary](https://github.com/StellarCanary/Protocol-Canary) | [Fixtures](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
+
+![ProtocolCanary-Action](assets/ProtocolCanary-Action-banner.svg)
+
 ## What it does
 
 This Action is a thin wrapper around the real `stellar-canary` CLI. It does
