@@ -1,12 +1,16 @@
 # ProtocolCanary-Action
 
-[![CI](https://github.com/StellarCanary/ProtocolCanary-Action/actions/workflows/ci.yml/badge.svg)](https://github.com/StellarCanary/ProtocolCanary-Action/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/StellarCanary/ProtocolCanary-Action)](https://github.com/StellarCanary/ProtocolCanary-Action/releases)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![ProtocolCanary-Action](assets/ProtocolCanary-Action-banner.svg)
 
 The official GitHub Actions integration for [Stellar Protocol
 Canary](https://github.com/StellarCanary/Protocol-Canary). It makes Stellar
 protocol compatibility testing a normal part of GitHub CI.
+
+[![CI](https://github.com/StellarCanary/ProtocolCanary-Action/actions/workflows/ci.yml/badge.svg)](https://github.com/StellarCanary/ProtocolCanary-Action/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/StellarCanary/ProtocolCanary-Action)](https://github.com/StellarCanary/ProtocolCanary-Action/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+[Documentation](https://stellarcanary.github.io/Protocol-Canary/) | [Protocol-Canary](https://github.com/StellarCanary/Protocol-Canary) | [Fixtures](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
 
 ## What it does
 
@@ -167,6 +171,10 @@ See [SECURITY.md](SECURITY.md). In short: no private keys, no transaction
 submission, `contents: read` is sufficient permission, and Canary
 arguments are always passed as an array — never interpolated into a shell
 string.
+
+## Code of Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Development
 
