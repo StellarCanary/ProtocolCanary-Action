@@ -151,6 +151,14 @@ a side effect of another change. Re-run the full test/lint/build sequence
 after any dependency bump, and run `npm audit` — fix or explicitly justify
 any new advisory before merging.
 
+Dependabot also opens automated update PRs for the npm and
+`github-actions` ecosystems on a weekly schedule (see
+`.github/dependabot.yml`), so some dependency updates arrive without
+anyone hand-writing a `chore(deps):` commit. Those PRs are held to the
+same review expectations as any other change: re-run the full
+test/lint/build sequence and `npm audit` before merging one, and either
+fix or explicitly justify any new advisory in the PR.
+
 ## Updating Canary compatibility
 
 If `Protocol-Canary` changes its CLI interface, JSON report schema, or
