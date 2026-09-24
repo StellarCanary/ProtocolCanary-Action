@@ -99,6 +99,16 @@ export function renderSummaryMarkdown(report: CanaryReport): string {
   return lines.join("\n");
 }
 
+/**
+ * Renders the Markdown shown when Canary cannot execute and no usable
+ * report is available. Use this instead of {@link renderSummaryMarkdown}
+ * for execution-failure paths; `reason` is the user-facing explanation and
+ * `diagnostic` is optional diagnostic output to include.
+ *
+ * @param reason The explanation of why execution failed.
+ * @param diagnostic Diagnostic output to include, when available.
+ * @returns Markdown for the execution-failure job summary.
+ */
 export function renderExecutionFailureMarkdown(reason: string, diagnostic: string): string {
   return [
     "## Stellar Protocol Canary",
@@ -117,6 +127,16 @@ export function renderExecutionFailureMarkdown(reason: string, diagnostic: strin
   ].join("\n");
 }
 
+/**
+ * Publishes `markdown` to the current GitHub Actions job summary.
+ *
+ * This wraps `core.summary.addRaw(markdown, true).write()`. If adding or
+ * writing the summary fails, it throws {@link SummaryPublishFailedError}
+ * with the underlying error message.
+ *
+ * @param markdown Markdown to append to the job summary.
+ * @throws {SummaryPublishFailedError} When summary publication fails.
+ */
 export async function writeSummary(markdown: string): Promise<void> {
   try {
     await core.summary.addRaw(markdown, true).write();
