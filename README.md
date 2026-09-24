@@ -114,6 +114,21 @@ A separate failure — the job summary itself failing to publish — is
 reported as "Failed to publish Canary summary," distinct from both of the
 above.
 
+### Annotation limits
+
+GitHub enforces a platform-level cap on how many annotations are surfaced
+in the UI per step and per workflow run, and silently drops any beyond
+that cap. This Action emits one annotation per failing, erroring, or
+warning result and does not batch or truncate, so a very large fixture set
+— or a run with many simultaneous failures — can produce more annotations
+than GitHub will display.
+
+That cap applies only to annotations. The job summary and the JSON report
+list every result regardless, so treat them, not the annotations, as the
+complete record of what Canary found. See GitHub's
+[workflow command documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands)
+for the platform's exact behavior.
+
 ## Artifacts
 
 When `upload-report: true` (the default), the JSON report is uploaded as a
