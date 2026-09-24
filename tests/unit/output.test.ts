@@ -2,27 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import { InvalidReportError } from "../../src/errors";
 import { describeExitCode, parseReport } from "../../src/output";
+import { report, result } from "./helpers";
 
-const VALID_REPORT = JSON.stringify({
-  schemaVersion: 1,
-  toolVersion: "0.1.0",
-  targetProtocol: 28,
-  project: { name: "example-project", type: "soroban" },
-  status: "pass",
-  counts: { total: 1, passed: 1, failed: 0, warnings: 0, errors: 0, skipped: 0 },
-  results: [
-    {
-      testId: "p28-xdr-cap83-empty-tx-set",
-      protocol: 28,
-      surface: "xdr",
-      status: "pass",
-      summary: "StellarValue round-tripped byte-for-byte",
-      durationMs: 1,
-      fixtureId: "p28-xdr-cap83-empty-tx-set",
-    },
-  ],
-  git: { commit: "68a5f8d", branch: "main", isDirty: false },
-});
+const VALID_REPORT = JSON.stringify(
+  report({
+    status: "pass",
+    counts: { total: 1, passed: 1, failed: 0, warnings: 0, errors: 0, skipped: 0 },
+    results: [
+      result({
+        testId: "p28-xdr-cap83-empty-tx-set",
+        surface: "xdr",
+        summary: "StellarValue round-tripped byte-for-byte",
+        fixtureId: "p28-xdr-cap83-empty-tx-set",
+      }),
+    ],
+    git: { commit: "68a5f8d", branch: "main", isDirty: false },
+  }),
+);
 
 describe("parseReport", () => {
   it("parses a well-formed report", () => {
@@ -80,10 +76,10 @@ describe("parseReport", () => {
       ...JSON.parse(VALID_REPORT),
       status: "fail",
       results: [
-        { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", durationMs: 1, fixtureId: "a" },
-        { testId: "b", protocol: 28, surface: "xdr", status: "fail", summary: "bad", durationMs: 1, fixtureId: "b" },
-        { testId: "c", protocol: 28, surface: "rpc", status: "warning", summary: "warn", durationMs: 1, fixtureId: "c" },
-        { testId: "d", protocol: 28, surface: "rpc", status: "error", summary: "err", durationMs: 1, fixtureId: "d" },
+        result({ testId: "a", surface: "xdr", summary: "ok", fixtureId: "a" }),
+        result({ testId: "b", surface: "xdr", status: "fail", summary: "bad", fixtureId: "b" }),
+        result({ testId: "c", surface: "rpc", status: "warning", summary: "warn", fixtureId: "c" }),
+        result({ testId: "d", surface: "rpc", status: "error", summary: "err", fixtureId: "d" }),
       ],
       skipped: [{ fixtureId: "e", surface: "soroban", reason: "disabled" }],
     };

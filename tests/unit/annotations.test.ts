@@ -11,34 +11,8 @@ vi.mock("@actions/core", async (importOriginal) => {
 });
 
 import type { AnnotationProperties } from "@actions/core";
-import { CanaryReport, CanaryResult } from "../../src/output";
 import { emitAnnotations, emitExecutionFailureAnnotation } from "../../src/annotations";
-
-function result(overrides: Partial<CanaryResult>): CanaryResult {
-  return {
-    testId: "t",
-    protocol: 28,
-    surface: "xdr",
-    status: "pass",
-    summary: "ok",
-    durationMs: 1,
-    fixtureId: "t",
-    ...overrides,
-  };
-}
-
-function report(results: CanaryResult[]): CanaryReport {
-  return {
-    schemaVersion: 1,
-    toolVersion: "0.1.0",
-    targetProtocol: 28,
-    project: { name: "p", type: "soroban" },
-    status: "pass",
-    counts: { total: results.length, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 },
-    results,
-    git: { commit: null, branch: null, isDirty: null },
-  };
-}
+import { report, result } from "./helpers";
 
 afterEach(() => {
   errorMock.mockReset();
