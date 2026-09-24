@@ -88,6 +88,21 @@ describe("parseReport", () => {
     expect(parsed.counts).toEqual({ total: 4, passed: 1, failed: 1, warnings: 1, errors: 1, skipped: 1 });
   });
 
+  it("rejects a report whose results field is present but not an array", () => {
+    const report = { ...JSON.parse(VALID_REPORT), results: {} };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+  });
+
+  it("parses a report with zero results and derives all-zero counts", () => {
+    const report = {
+      ...JSON.parse(VALID_REPORT),
+      results: [],
+      counts: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 },
+    };
+    const parsed = parseReport(JSON.stringify(report));
+    expect(parsed.counts).toEqual({ total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 });
+  });
+
   it("trusts a well-formed counts field from the CLI rather than recomputing it", () => {
     // If the CLI's own counts ever legitimately differed from a naive
     // recount (e.g. a future aggregation rule), the Action must not

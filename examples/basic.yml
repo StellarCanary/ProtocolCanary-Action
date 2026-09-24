@@ -1,6 +1,10 @@
 # Minimal usage: check the current repository against the protocol
 # declared in its own .stellar-canary.toml (or protocol 28 if there is no
 # configuration file), using fixtures from a local `fixtures/` directory.
+#
+# Prefer this example for a push-only smoke check on `main`. See
+# pull-request.yml for gating pull requests instead, with the JSON report
+# uploaded as an artifact.
 name: Stellar Compatibility
 
 on:
