@@ -106,6 +106,115 @@ describe("parseReport", () => {
     const parsed = parseReport(JSON.stringify(report));
     expect(parsed.counts).toEqual({ total: 1, passed: 1, failed: 0, warnings: 0, errors: 0, skipped: 0 });
   });
+
+  // Regression tests for issue #67: the top-level report is otherwise
+  // valid, but a single malformed `results` entry must be rejected at
+  // parse time with InvalidReportError — not surface later as "undefined"
+  // in annotations or the summary markdown.
+  const RESULT_FIXTURE = JSON.parse(VALID_REPORT) as Record<string, unknown>;
+
+  function reportWithResultEntry(entry: unknown): string {
+    return JSON.stringify({ ...RESULT_FIXTURE, results: [entry] });
+  }
+
+  it("rejects a report whose results array contains a non-object entry", () => {
+    expect(() => parseReport(reportWithResultEntry("not-an-object"))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing testId", () => {
+    const { testId: _testId, ...rest } = {
+      testId: "p28-xdr-cap83-empty-tx-set",
+      protocol: 28,
+      surface: "xdr",
+      status: "pass",
+      summary: "ok",
+      durationMs: 1,
+      fixtureId: "p28-xdr-cap83-empty-tx-set",
+    };
+    expect(() => parseReport(reportWithResultEntry(rest))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing surface", () => {
+    const entry = { testId: "a", protocol: 28, status: "pass", summary: "ok", durationMs: 1, fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing status", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", summary: "ok", durationMs: 1, fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry with an invalid status value", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", status: "anything", summary: "ok", durationMs: 1, fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry with an invalid surface value", () => {
+    const entry = { testId: "a", protocol: 28, surface: "graphql", status: "pass", summary: "ok", durationMs: 1, fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing summary", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", status: "pass", durationMs: 1, fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing durationMs", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry with a non-numeric durationMs", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", durationMs: "100", fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing fixtureId", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", durationMs: 1 };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("accepts a result entry with a null fixtureId", () => {
+    const entry = { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", durationMs: 1, fixtureId: null };
+    expect(() => parseReport(reportWithResultEntry(entry))).not.toThrow();
+  });
+
+  it("rejects a result entry with multiple malformed fields", () => {
+    const entry = { testId: 7, surface: "xdr", status: "nope", summary: "ok", durationMs: "100", fixtureId: null };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a result entry missing the required protocol field", () => {
+    const entry = { testId: "a", surface: "xdr", status: "pass", summary: "ok", durationMs: 1, fixtureId: "a" };
+    expect(() => parseReport(reportWithResultEntry(entry))).toThrow(InvalidReportError);
+  });
+
+  it("identifies the offending result index in the error message", () => {
+    const bad = { testId: "a", protocol: 28, surface: "xdr", summary: "ok", durationMs: 1, fixtureId: "a" };
+    const good = { testId: "b", protocol: 28, surface: "rpc", status: "pass", summary: "ok", durationMs: 1, fixtureId: "b" };
+    const report = { ...RESULT_FIXTURE, results: [good, bad] };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/results\[1\]/);
+  });
+
+  it("rejects a skipped entry with a missing required field", () => {
+    const report = { ...RESULT_FIXTURE, skipped: [{ fixtureId: "f", surface: "xdr" }] };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+  });
+
+  it("rejects a skipped entry with an incorrect field type", () => {
+    const report = { ...RESULT_FIXTURE, skipped: [{ fixtureId: "f", surface: "xdr", reason: 42 }] };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+  });
+
+  it("accepts a well-formed skipped entry", () => {
+    const report = { ...RESULT_FIXTURE, skipped: [{ fixtureId: "f", surface: "xdr", reason: "disabled" }] };
+    expect(() => parseReport(JSON.stringify(report))).not.toThrow();
+  });
+
+  it("rejects a skipped field that is present but not an array", () => {
+    const report = { ...RESULT_FIXTURE, skipped: "none" };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+  });
 });
 
 describe("describeExitCode", () => {

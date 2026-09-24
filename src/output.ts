@@ -71,6 +71,68 @@ function isCountsShape(value: unknown): value is CanaryCounts {
   );
 }
 
+const RESULT_STATUSES: readonly ResultStatus[] = ["pass", "warning", "fail", "error", "skipped"];
+const SURFACES: readonly Surface[] = ["xdr", "rpc", "soroban"];
+
+/**
+ * Validates one `results[]` entry against the documented CanaryResult
+ * shape. `details` is the only optional field; `fixtureId` may be null.
+ * Returns a human-readable reason when the entry is malformed, so the
+ * caller can include the offending result's index in the error.
+ */
+function resultShapeError(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null) {
+    return "entry is not an object";
+  }
+  const result = entry as Partial<CanaryResult>;
+  if (typeof result.testId !== "string") {
+    return "missing or non-string \"testId\"";
+  }
+  if (typeof result.protocol !== "number") {
+    return "missing or non-numeric \"protocol\"";
+  }
+  if (typeof result.surface !== "string" || !SURFACES.includes(result.surface)) {
+    return `invalid \"surface\" (expected one of ${SURFACES.map((s) => `"${s}"`).join(", ")})`;
+  }
+  if (typeof result.status !== "string" || !RESULT_STATUSES.includes(result.status)) {
+    return `invalid \"status\" (expected one of ${RESULT_STATUSES.map((s) => `"${s}"`).join(", ")})`;
+  }
+  if (typeof result.summary !== "string") {
+    return "missing or non-string \"summary\"";
+  }
+  if (result.details !== undefined && typeof result.details !== "string") {
+    return 'non-string "details"';
+  }
+  if (typeof result.durationMs !== "number") {
+    return 'missing or non-numeric "durationMs"';
+  }
+  if (typeof result.fixtureId !== "string" && result.fixtureId !== null) {
+    return 'non-string, non-null "fixtureId"';
+  }
+  return undefined;
+}
+
+/**
+ * Validates one `skipped[]` entry against the documented CanarySkip
+ * shape (`surface` is a free-form string there, unlike results).
+ */
+function skipShapeError(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null) {
+    return "entry is not an object";
+  }
+  const skip = entry as Partial<CanarySkip>;
+  if (typeof skip.fixtureId !== "string") {
+    return 'missing or non-string "fixtureId"';
+  }
+  if (typeof skip.surface !== "string") {
+    return 'missing or non-string "surface"';
+  }
+  if (typeof skip.reason !== "string") {
+    return 'missing or non-string "reason"';
+  }
+  return undefined;
+}
+
 /**
  * `counts` is documented as "purely a convenience — always re-derivable
  * from results[].status" and, like `git`, was added to the report schema
@@ -136,7 +198,31 @@ export function parseReport(stdout: string): CanaryReport {
     throw new InvalidReportError("Canary's JSON output does not match the documented report shape.");
   }
 
-  const results = report.results as CanaryResult[];
+  const rawResults: unknown[] = report.results;
+  for (const [index, entry] of rawResults.entries()) {
+    const problem = resultShapeError(entry);
+    if (problem !== undefined) {
+      throw new InvalidReportError(
+        `Canary's JSON output does not match the documented report shape: results[${String(index)}] ${problem}.`,
+      );
+    }
+  }
+  const results = rawResults as CanaryResult[];
+
+  if (report.skipped !== undefined && !Array.isArray(report.skipped)) {
+    throw new InvalidReportError(
+      'Canary\'s JSON output does not match the documented report shape: "skipped" is present but not an array.',
+    );
+  }
+  const rawSkipped: readonly unknown[] = report.skipped ?? [];
+  for (const [index, entry] of rawSkipped.entries()) {
+    const problem = skipShapeError(entry);
+    if (problem !== undefined) {
+      throw new InvalidReportError(
+        `Canary's JSON output does not match the documented report shape: skipped[${String(index)}] ${problem}.`,
+      );
+    }
+  }
   const skipped = report.skipped as CanarySkip[] | undefined;
   const counts = isCountsShape(report.counts) ? report.counts : deriveCounts(results, skipped);
 
