@@ -75,5 +75,16 @@ export function describeError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
+  if (typeof error === "object" && error !== null) {
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized !== undefined && serialized !== "") {
+        return serialized;
+      }
+    } catch {
+      // Circular references, BigInt values, or a throwing `toJSON` make
+      // JSON serialization fail; fall through to String(error).
+    }
+  }
   return String(error);
 }
