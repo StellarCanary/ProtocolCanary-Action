@@ -4,6 +4,33 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Checksum verification: when `StellarCanary/Protocol-Canary` publishes a
+  checksum manifest alongside a release, the installed or cached binary is
+  verified against it before use, and a mismatch fails the run with an
+  `InstallationFailed` error. Until such a manifest exists the check is a
+  no-op debug log, so commit/tag pinning is unchanged — see `SECURITY.md`.
+
+### Changed
+
+- The tag lookup that pins installs to an immutable commit now sends a
+  `GITHUB_TOKEN` bearer credential when one is available and follows
+  pagination across every page of the tags endpoint. A shared runner IP
+  hitting the 60/hour unauthenticated limit, or a repository growing past
+  100 tags, can no longer silently degrade installation to tag-based
+  pinning.
+- Third-party actions in `.github/workflows/*.yml` are pinned to full
+  commit SHAs (with the human-readable version kept as a trailing comment)
+  instead of mutable version tags, closing a supply-chain hole — most
+  importantly in `release.yml`, which runs with `contents: write`.
+
+### Testing
+
+- Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
+  child process, for cleanup of those listeners after settling, and for the
+  cancellation branch where the child exits with a null code and a signal.
+
 ## [0.1.1]
 
 ### Changed
