@@ -40,10 +40,18 @@ Canonical fixtures live in
     protocol: "28"
 ```
 
-See [`examples/`](examples/) for complete workflows, including one that
-checks out the real `ProtocolCanary-Fixtures` Protocol 28 pack
-([`examples/protocol-28.yml`](examples/protocol-28.yml)) and one that runs
-on a self-hosted runner ([`examples/self-hosted.yml`](examples/self-hosted.yml)).
+This snippet is not runnable on its own: `fixtures-dir` defaults to
+`fixtures`, relative to the job's working directory, and a freshly
+checked-out project normally has no `fixtures/` directory, so there is
+nothing for Canary to check. Either point `fixtures-dir` at your own
+fixtures or check out a fixtures pack first, as
+[`examples/protocol-28.yml`](examples/protocol-28.yml) does.
+
+See [`examples/`](examples/) for the complete, runnable workflows —
+including that Protocol 28 one, which checks out the real
+`ProtocolCanary-Fixtures` pack and sets `fixtures-dir` to match — and for
+one that runs on a self-hosted runner
+([`examples/self-hosted.yml`](examples/self-hosted.yml)).
 
 ## Example workflow
 
