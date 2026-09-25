@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file.
 
 ### Documentation
 
+- README gains a "Troubleshooting" section mapping the most common
+  execution-failure messages (`cargo` not found, `cargo install` exit
+  101, timeouts, unparsable reports, unsupported `schemaVersion`, missing
+  config file) to concrete next steps, cross-referenced with the bug
+  report template's "Which kind of failure?" checklist; the Outputs table
+  now shows an example value for every output.
+
+### Added
+
+- `npm run test:coverage` produces v8 line/branch coverage for `src/`
+  (terminal, HTML, and lcov reports; contributor-facing only — no effect
+  on the Action's behavior).
+
 - Quick start now says that `fixtures-dir` defaults to `fixtures` and that
   a fresh checkout has no such directory, pointing at
   `examples/protocol-28.yml` for a complete workflow; CONTRIBUTING.md
