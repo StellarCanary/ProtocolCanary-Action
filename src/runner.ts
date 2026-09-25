@@ -3,8 +3,19 @@ import { spawn } from "node:child_process";
 import { ActionInputs } from "./inputs";
 import { CanaryExecutionFailedError, TimeoutError } from "./errors";
 
+/**
+ * Result of running `stellar-canary check`.
+ * `exitCode` and `signal` are complementary: when the process is
+ * terminated by a signal, Node sets `exitCode` to `null` and populates
+ * `signal` with the terminating signal. `src/main.ts` interprets
+ * `execution.exitCode === null` as an execution failure caused by a signal.
+ * For a normal exit, `signal` is `null` and `exitCode` contains the process
+ * status code.
+ */
 export interface CheckExecutionResult {
+  /** Exit status for a normal process exit; `null` if terminated by a signal. */
   readonly exitCode: number | null;
+  /** Signal that terminated the process, or `null` for a normal exit. */
   readonly signal: NodeJS.Signals | null;
   readonly stdout: string;
   readonly stderr: string;
