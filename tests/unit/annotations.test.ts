@@ -49,6 +49,24 @@ describe("emitAnnotations", () => {
     expect(properties?.file).toBeUndefined();
     expect(properties?.startLine).toBeUndefined();
   });
+
+  it("passes a multi-line fail summary through unchanged to core.error", () => {
+    // @actions/core is responsible for percent-encoding newlines in the
+    // workflow command; emitAnnotations must hand it the raw message.
+    const summary = "surface mismatch\n  expected: protocol 28\n  actual: protocol 27";
+    emitAnnotations(report([result({ status: "fail", testId: "p28-xdr-2", summary })]));
+    expect(errorMock).toHaveBeenCalledTimes(1);
+    expect(errorMock.mock.calls[0]?.[0]).toBe(`[xdr] p28-xdr-2: ${summary}`);
+    expect(errorMock.mock.calls[0]?.[0]?.split("\n")).toHaveLength(3);
+  });
+
+  it("passes a multi-line warning summary through unchanged to core.warning", () => {
+    const summary = "deprecated endpoint\n  use the v2 RPC URL";
+    emitAnnotations(report([result({ status: "warning", testId: "p28-rpc-3", summary })]));
+    expect(warningMock).toHaveBeenCalledTimes(1);
+    expect(warningMock.mock.calls[0]?.[0]).toBe(`[xdr] p28-rpc-3: ${summary}`);
+    expect(errorMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("emitExecutionFailureAnnotation", () => {
