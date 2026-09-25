@@ -23,6 +23,11 @@ export function emitAnnotations(report: CanaryReport): void {
   }
 }
 
+/**
+ * Emits a general execution-failure annotation for install, run, or parse
+ * failures. Call this instead of `emitAnnotations` when no per-result report
+ * exists. Like `emitAnnotations`, it never attaches a file/line location.
+ */
 export function emitExecutionFailureAnnotation(reason: string): void {
   core.error(`Protocol Canary could not be executed: ${reason}`, { title: TITLE });
 }
