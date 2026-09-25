@@ -23,7 +23,10 @@ inputs:
       Path to a `.stellar-canary.toml` configuration file, relative to the
       workflow's working directory. If omitted, the CLI looks for
       `.stellar-canary.toml` in the project root. If a path is given and
-      the file does not exist, the Action fails before invoking Canary.
+      the file does not exist, the Action fails before invoking Canary. A
+      relative path is resolved to an absolute path against that working
+      directory before being forwarded, so the file that is validated and
+      the file the CLI reads are always the same.
     required: false
 
   network:

@@ -3,7 +3,15 @@
   "version": "0.1.1",
   "private": true,
   "description": "Official GitHub Actions integration for Stellar Protocol Canary.",
+  "homepage": "https://github.com/StellarCanary/ProtocolCanary-Action#readme",
+  "bugs": {
+    "url": "https://github.com/StellarCanary/ProtocolCanary-Action/issues"
+  },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StellarCanary/ProtocolCanary-Action.git"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -13,6 +21,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src tests"
   },
   "dependencies": {
@@ -23,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@vitest/coverage-v8": "^5.0.2",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "typescript": "~6.0.3",

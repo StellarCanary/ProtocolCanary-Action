@@ -64,6 +64,27 @@ describe("getInputs", () => {
     expect(() => getInputs()).toThrow(ConfigNotFoundError);
   });
 
+  it("returns a config path resolved to an absolute path", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "canary-config-"));
+    const configPath = path.join(dir, ".stellar-canary.toml");
+    fs.writeFileSync(configPath, "[tests]\n", "utf8");
+    try {
+      // Deliberately relative: this is what distinguishes the resolved value
+      // from the raw input that used to be returned.
+      const relative = path.relative(process.cwd(), configPath);
+      process.env.INPUT_CONFIG = relative;
+
+      const inputs = getInputs();
+
+      // The value forwarded to the CLI as --config must be exactly the path
+      // the existence check validated, not the string as written.
+      expect(inputs.config).toBe(configPath);
+      expect(inputs.config).not.toBe(relative);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("accepts a config path that exists but is a directory", () => {
     // parseConfig validates with fs.existsSync, which is true for a directory
     // just as much as for a file, so it does not reject this here. This test
