@@ -59,6 +59,14 @@ describe("getInputs", () => {
     expect(() => getInputs()).toThrow(InvalidInputError);
   });
 
+  it("rejects a negative protocol", () => {
+    // A negative value is a plausible typo (array index / off-by-one) and a
+    // different input shape than a non-numeric string, so lock in that
+    // PROTOCOL_LIKE's digits-only anchor rejects it too.
+    process.env.INPUT_PROTOCOL = "-1";
+    expect(() => getInputs()).toThrow(InvalidInputError);
+  });
+
   it("rejects a config path that does not exist", () => {
     process.env.INPUT_CONFIG = "/nonexistent/.stellar-canary.toml";
     expect(() => getInputs()).toThrow(ConfigNotFoundError);
@@ -98,6 +106,16 @@ describe("getInputs", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("trims surrounding whitespace from network", () => {
+    process.env.INPUT_NETWORK = "  testnet  ";
+    expect(getInputs().network).toBe("testnet");
+  });
+
+  it("treats an all-whitespace network as unset", () => {
+    process.env.INPUT_NETWORK = "   ";
+    expect(getInputs().network).toBeUndefined();
   });
 
   it("accepts an https rpc-url", () => {
