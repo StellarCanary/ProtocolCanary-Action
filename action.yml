@@ -63,9 +63,13 @@ inputs:
   upload-report:
     description: >-
       Upload the machine-readable JSON report as a workflow artifact
-      named `stellar-protocol-canary-report`. Artifact upload is
-      auxiliary: a failure to upload never changes the underlying
-      compatibility result.
+      named `stellar-protocol-canary-report`. When the same workflow run
+      invokes this Action more than once (for example a matrix over
+      networks or protocol versions), the first invocation keeps that
+      stable name and later invocations automatically retry under a
+      name suffixed with the inputs that distinguish them. Artifact
+      upload is auxiliary: a failure to upload never changes the
+      underlying compatibility result.
     required: false
     default: "true"
 
@@ -79,7 +83,14 @@ inputs:
   timeout-minutes:
     description: >-
       Maximum time to let the Canary process run before it is terminated
-      and the Action fails with a timeout error.
+      and the Action fails with a timeout error. This bounds only the
+      `stellar-canary check` process, not `cargo install` or the rest of
+      the job. It is unrelated to GitHub Actions' own job/step-level
+      `timeout-minutes`, which the platform enforces over the whole job:
+      set any surrounding job- or step-level `timeout-minutes`
+      comfortably higher than this value, otherwise GitHub's own timeout
+      can terminate the step first with a generic error and no Canary
+      summary, annotations, or timeout diagnostic.
     required: false
     default: "15"
 
@@ -98,7 +109,11 @@ outputs:
   errors:
     description: Number of checks that could not complete due to an execution error.
   report:
-    description: Absolute path to the generated JSON report file.
+    description: >-
+      Absolute path to the generated JSON report file. Only set when Canary
+      produced output to parse; empty/unset on an execution failure (when
+      status is `execution-failed`), unlike `passed`/`warnings`/`failures`/`errors`,
+      which are explicitly set to `0` in that case.
 
 runs:
   using: node24

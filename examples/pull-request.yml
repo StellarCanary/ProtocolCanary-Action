@@ -1,5 +1,9 @@
 # Gate pull requests on Stellar protocol compatibility, with the JSON
 # report uploaded as an artifact for later inspection.
+#
+# Note: annotations from this Action are workflow-level (fixtures carry no
+# file/line), so they show up in the Checks tab and run log — not inline
+# on the PR's file diff.
 name: Stellar Compatibility
 
 on:

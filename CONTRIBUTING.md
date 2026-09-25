@@ -58,6 +58,53 @@ variable. `.github/workflows/integration.yml` is the only place this
 repository talks to a real Canary build and a real Testnet endpoint, and it
 never gates a pull request.
 
+For tests that need to observe what the Action reports through
+`@actions/core`, use the partial-mock convention described in [Mocking
+`@actions/core`](#mocking-actionscore) below rather than mocking the module
+your own way.
+
+### Mocking `@actions/core`
+
+When a test needs to assert on `core.error`, `core.warning`, or
+`core.setFailed`, spread the real module and override only the exports that
+test observes. Never replace `@actions/core` wholesale with a hand-written
+object: unrelated exports such as `core.summary`, `core.getInput`, and
+`core.setOutput` must keep working through the real implementation, and the
+suite relies on that (for example, `core.summary` writes
+`GITHUB_STEP_SUMMARY`). This is the pattern used by
+`tests/unit/annotations.test.ts` and `tests/integration/end-to-end.test.ts`:
+
+```ts
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// vi.mock is hoisted above the imports, so the mock functions must be too.
+const { errorMock } = vi.hoisted(() => ({ errorMock: vi.fn() }));
+
+vi.mock("@actions/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@actions/core")>();
+  return { ...actual, error: errorMock };
+});
+
+import { emitAnnotations } from "../../src/annotations";
+
+afterEach(() => {
+  errorMock.mockReset();
+});
+```
+
+Key points:
+
+- declare the spies with `vi.hoisted` so the hoisted `vi.mock` factory can
+  reference them;
+- take `importOriginal<typeof import("@actions/core")>()` and spread
+  `...actual`, overriding only the functions under test;
+- reset the mocks in `afterEach` (`mockReset()`) so assertions in one test
+  do not see calls from another.
+
+Only add a mock for an export the test actually asserts on; leaving the
+rest real is what keeps these tests interoperable with the rest of the
+suite.
+
 ## Build
 
 `dist/index.js` is a committed, bundled artifact — consumers of this
@@ -123,14 +170,24 @@ exit-code contract:
 ## Release process
 
 1. Update `CHANGELOG.md`.
-2. Tag `vX.Y.Z` on `main` (annotated tag, matching `package.json`'s
+2. Update the supported-versions table in `SECURITY.md`: add the new
+   version as supported and mark every previously released version
+   unsupported, so the table stays in sync with `CHANGELOG.md`'s
+   release history.
+3. Tag `vX.Y.Z` on `main` (annotated tag, matching `package.json`'s
    version). `.github/workflows/release.yml` verifies the build and tests
    for that tag and publishes a GitHub Release.
-3. Move the floating major tag (e.g. `v1`) to point at the new tag's
-   commit, once you've confirmed the release looks right:
+3. The floating major tag (e.g. `v1`) is moved automatically by
+   `.github/workflows/release.yml`, in the same job, after the release is
+   created. No manual step is required. The workflow only ever moves the
+   major tag forward: it is left untouched when the pushed tag is not the
+   newest `vX.Y.Z` in that major line (a re-run, or a tag pushed out of
+   order), and pre-1.0 releases publish no floating major tag at all.
+
+   If you need to move a major tag by hand for an exceptional case, use an
+   annotated tag and force-push it — but never do this for a pre-1.0
+   release, and never move a major tag backwards:
    ```bash
    git tag -fa v1 vX.Y.Z -m "Update v1 to vX.Y.Z"
    git push origin v1 --force
    ```
-   Never do this for a pre-1.0 release, and never move a major tag
-   backwards.

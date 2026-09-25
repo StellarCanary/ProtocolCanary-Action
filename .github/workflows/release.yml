@@ -48,3 +48,42 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+
+      # Keep the floating major tag (v1) pointing at the latest release in
+      # that major line. This used to be a manual step maintainers had to
+      # remember (see CONTRIBUTING.md); forgetting it silently left every
+      # `@v1` consumer on a stale release.
+      - name: Move floating major tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # The push event only fetches the pushed tag; the rest are needed
+          # to decide whether this release is the newest in its major line.
+          git fetch --tags --force
+
+          if [[ ! "$RELEASE_TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::$RELEASE_TAG is not a vX.Y.Z tag; not moving a major tag."
+            exit 0
+          fi
+
+          major="v${BASH_REMATCH[1]}"
+          if [[ "$major" == "v0" ]]; then
+            echo "::notice::Pre-1.0 releases do not publish a floating major tag; skipping."
+            exit 0
+          fi
+
+          # Never move the major tag backwards: if a newer release in this
+          # major line already exists (a re-run, or a tag pushed out of
+          # order), leave the tag where it is.
+          latest="$(git tag --list "${major}.*" --sort=-v:refname | head -n1)"
+          if [[ "$latest" != "$RELEASE_TAG" ]]; then
+            echo "::notice::$RELEASE_TAG is not the latest ${major} release (${latest} is); leaving ${major} untouched."
+            exit 0
+          fi
+
+          commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          git tag -fa "$major" "$commit" -m "Update ${major} to ${RELEASE_TAG}"
+          git push origin "refs/tags/${major}" --force
+          echo "::notice::Moved ${major} to ${RELEASE_TAG} (${commit})."

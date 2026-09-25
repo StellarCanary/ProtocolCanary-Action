@@ -1,6 +1,15 @@
 import * as core from "@actions/core";
 import * as https from "node:https";
 
+/**
+ * Single point of control for where this Action installs Protocol-Canary from.
+ *
+ * These constants are shared between the `cargo install --git` target
+ * (`CANARY_REPO_URL` in `src/canary.ts`) and the GitHub REST API tag lookup
+ * (`CANARY_REPO_OWNER`/`CANARY_REPO_NAME` in `resolveTagCommit`, this file).
+ * Changing them (e.g. to point at a fork) affects both the install source
+ * and the tag-resolution API calls, so keep them in sync.
+ */
 export const CANARY_REPO_OWNER = "StellarCanary";
 export const CANARY_REPO_NAME = "Protocol-Canary";
 export const CANARY_REPO_URL = `https://github.com/${CANARY_REPO_OWNER}/${CANARY_REPO_NAME}.git`;
