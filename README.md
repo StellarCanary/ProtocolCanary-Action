@@ -131,8 +131,15 @@ checksums (see its own `docs/json-report-contract.md` and this Action's
 resolved to at run time (falling back to the tag itself, with a warning, if
 that resolution fails) — see `src/version.ts` and `src/canary.ts`. This
 requires a Rust/Cargo toolchain on the runner; GitHub-hosted Ubuntu
-runners include one by default. A successful build is cached (best-effort;
-never required for correctness) using `actions/cache`.
+runners include one by default. This Action is also a JavaScript action,
+declared as `runs: using: node24` in `action.yml`, so the runner must
+additionally provide the Node 24 Actions runtime. GitHub-hosted runners
+always satisfy this; a self-hosted runner needs an
+[Actions Runner](https://github.com/actions/runner/releases) version new
+enough to bundle Node 24 (v2.328.0 or later), or the step fails to start
+with an opaque runtime error before Canary is ever installed or run. A
+successful build is cached (best-effort; never required for correctness)
+using `actions/cache`.
 
 ## Versioning
 
