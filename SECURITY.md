@@ -87,8 +87,15 @@ author chooses to pass.
 
 ## Supported versions
 
-Only the latest released `0.x` minor version of this Action receives
-security fixes while it is pre-1.0.
+| Version | Supported |
+| --- | --- |
+| 0.1.1 | Yes |
+| 0.1.0 | No |
+
+Only the latest released `0.x` version of this Action receives security
+fixes while it is pre-1.0; fixes are not backported to older releases.
+The table above enumerates every released version from `CHANGELOG.md`,
+so support status never has to be re-derived from the release history.
 
 ## Audit status
 

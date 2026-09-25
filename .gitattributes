@@ -1,0 +1,7 @@
+# Generated build artifacts (esbuild bundle — see CONTRIBUTING.md "Build").
+# Never hand-edit these; regenerate with `npm run build`.
+# linguist-generated collapses them in PR diffs and excludes them from
+# language statistics; -diff keeps git from producing full un-collapsed
+# diffs for these minified multi-MB files.
+dist/index.js linguist-generated=true -diff
+dist/index.js.map linguist-generated=true -diff
