@@ -10,6 +10,24 @@ protocol compatibility testing a normal part of GitHub CI.
 
 [Documentation](https://stellarcanary.github.io/Protocol-Canary/) | [Protocol-Canary](https://github.com/StellarCanary/Protocol-Canary) | [Fixtures](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [Example workflow](#example-workflow)
+- [Inputs](#inputs)
+- [Outputs](#outputs)
+- [How failures appear](#how-failures-appear)
+- [Artifacts](#artifacts)
+- [Installation & integrity](#installation--integrity)
+- [Versioning](#versioning)
+- [Limitations](#limitations)
+- [Security](#security)
+- [Code of Conduct](#code-of-conduct)
+- [Maintainers & Community](#maintainers--community)
+- [Development](#development)
+- [License](#license)
+
 ## What it does
 
 This Action is a thin wrapper around the real `stellar-canary` CLI. It does
@@ -122,6 +140,98 @@ The Action distinguishes two different kinds of "red":
 A separate failure — the job summary itself failing to publish — is
 reported as "Failed to publish Canary summary," distinct from both of the
 above.
+
+### What the job summary looks like
+
+The summary is rendered by `renderSummaryMarkdown` in
+[`src/summary.ts`](src/summary.ts). A passing run over three surfaces, with a
+network configured and one fixture skipped:
+
+```markdown
+## Stellar Protocol Canary
+
+Protocol: 28
+Project: my-soroban-contracts (soroban)
+Network: testnet — observed protocol 28
+Canary version: 0.1.1
+
+| Surface | Result |
+|---|---|
+| XDR | ✅ PASS (2/2) |
+| RPC | ✅ PASS (1/1) |
+| Soroban | ✅ PASS (1/1) |
+
+### Result
+
+✅ **PASS**
+
+4/4 applicable checks passed.
+
+<details><summary>Skipped fixtures</summary>
+
+- `p27-xdr-legacy` (xdr) — fixture targets protocol 27, this run targets protocol 28
+
+</details>
+```
+
+And a run with a failing check, a warning, and a check that could not complete:
+
+```markdown
+## Stellar Protocol Canary
+
+Protocol: 28
+Project: my-soroban-contracts (soroban)
+Network: testnet — observed protocol 28
+Canary version: 0.1.1
+
+| Surface | Result |
+|---|---|
+| XDR | ❌ FAIL (1/2) |
+| RPC | ⚠️ WARNING (0/1) |
+| Soroban | ❌ FAIL (0/1) |
+
+### Result
+
+❌ **NOT READY**
+
+1/4 applicable checks passed.
+
+#### Failures
+
+- `p28-xdr-cap85-002` (xdr) — transaction envelope metadata differs from the expected encoding
+  expected discriminant 3, found 2
+  at line 1, column 24
+- `p28-soroban-invoke-004` (soroban) — simulateInvoke could not reach the configured RPC endpoint
+  connect ETIMEDOUT 10.0.0.1:443
+
+#### Warnings
+
+- `p28-rpc-getledgerentries-003` (rpc) — RPC endpoint returned HTTP 429; result may be incomplete
+```
+
+When Canary could not be run at all, the summary says so explicitly instead —
+`renderExecutionFailureMarkdown`:
+
+````markdown
+## Stellar Protocol Canary
+
+### Result
+
+🚫 **ERROR**
+
+Protocol Canary could not be executed.
+
+Reason: Stellar Protocol Canary timed out after 900s and was terminated.
+
+```text
+(no diagnostic output)
+```
+````
+
+More examples — including the surface ordering, the skipped-fixtures block, and
+the no-results case — live in
+[`tests/unit/summary.test.ts`](tests/unit/summary.test.ts), which renders
+these fixtures through the same function.
 
 Annotations from this Action are workflow-level only: no fixture in the
 report schema carries a file/line location, so they appear in the

@@ -65,6 +65,33 @@ describe("buildCheckArgs", () => {
     expect(args).not.toContain("--protocol");
   });
 
+  it("omits --network specifically when only network is left unset", () => {
+    // Every optional flag is guarded by its own independent `if` in
+    // `buildCheckArgs`, so a refactor that starts always pushing --network
+    // (e.g. as an empty string) must still be caught here, with the other
+    // optional inputs deliberately left set.
+    const args = buildCheckArgs({
+      ...BASE_INPUTS,
+      network: undefined,
+      rpcUrl: "https://soroban-testnet.stellar.org",
+      config: ".stellar-canary.toml",
+    });
+    expect(args).not.toContain("--network");
+    expect(args).not.toContain("");
+    // The flags that *were* provided are still forwarded, so this cannot
+    // pass by an implementation that drops every optional argument.
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--protocol",
+        "28",
+        "--rpc-url",
+        "https://soroban-testnet.stellar.org",
+        "--config",
+        ".stellar-canary.toml",
+      ]),
+    );
+  });
+
   it("forwards network, rpc-url, and config as separate arguments", () => {
     const args = buildCheckArgs({
       ...BASE_INPUTS,
