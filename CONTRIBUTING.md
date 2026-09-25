@@ -122,7 +122,13 @@ exit-code contract:
 
 ## Release process
 
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md`. Link every entry to the pull request that
+   introduced it with a trailing `([#123])` reference — e.g.
+   "- Add the annotations input ([#42])." — so the diff and discussion
+   for a change are one click away. Entries that predate the repository's
+   pull-request workflow (everything up to and including `v0.1.1`)
+   reference the commit that introduced the change instead, as
+   `([0de71ec])`, since no pull request exists for them.
 2. Tag `vX.Y.Z` on `main` (annotated tag, matching `package.json`'s
    version). `.github/workflows/release.yml` verifies the build and tests
    for that tag and publishes a GitHub Release.
