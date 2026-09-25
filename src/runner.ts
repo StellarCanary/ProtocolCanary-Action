@@ -53,6 +53,18 @@ const SIGNALS_TO_FORWARD: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 export const SIGKILL_GRACE_MS = 5000;
 
 /**
+ * Floor for the `cargo install` time bound derived from `timeout-minutes`.
+ *
+ * `timeout-minutes` is documented as bounding the `stellar-canary check`
+ * process, so a user may set it very low without expecting installation to
+ * be affected; clamping the install bound to at least one minute keeps such
+ * configurations working while still guaranteeing (per issue #65) that a
+ * hung `cargo install` can never outlive the Action's own timeout path and
+ * block the job until GitHub's much longer job-level timeout.
+ */
+export const CARGO_INSTALL_TIMEOUT_FLOOR_MS = 60_000;
+
+/**
  * Runs a Canary binary with the given arguments, capturing stdout and
  * stderr separately, enforcing `timeoutMs`, and forwarding cancellation
  * signals to the child process so a cancelled workflow does not leave it

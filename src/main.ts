@@ -5,7 +5,7 @@ import * as path from "node:path";
 
 import { uploadReport } from "./artifact";
 import { emitAnnotations, emitExecutionFailureAnnotation } from "./annotations";
-import { ensureCanaryInstalled } from "./canary";
+import { cargoInstallTimeoutMs, ensureCanaryInstalled } from "./canary";
 import { describeError, isCanaryActionError } from "./errors";
 import { ActionInputs, getInputs } from "./inputs";
 import { describeExitCode, parseReport } from "./output";
@@ -77,7 +77,7 @@ export async function run(): Promise<void> {
 
   let installed;
   try {
-    installed = await ensureCanaryInstalled(resolved);
+    installed = await ensureCanaryInstalled(resolved, cargoInstallTimeoutMs(inputs.timeoutMinutes));
   } catch (error) {
     await handleExecutionFailure(describeError(error), "", inputs.annotations);
     return;
