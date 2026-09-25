@@ -88,7 +88,7 @@ jobs:
 | `version` | `Protocol-Canary` version to install, without a leading `v`. Pinned — never tracks `main`. | `0.1.1` |
 | `upload-report` | Upload the JSON report as a workflow artifact. | `true` |
 | `annotations` | Emit GitHub annotations for failures/warnings/errors. | `true` |
-| `timeout-minutes` | Maximum time to let Canary run before it is terminated. Bounds only the Canary process, not the whole job — see [Timeouts](#timeouts). | `15` |
+| `timeout-minutes` | Maximum time to let Canary run before it is terminated. Also bounds the `cargo install` step (floored at one minute) — see [Timeouts](#timeouts). | `15` |
 
 There is deliberately no `format` input: the Action always requests
 `--format json` from the CLI (the only way it can build the summary and
@@ -160,6 +160,7 @@ what to do about each.
 | ``The `cargo` command was not found on this runner. …`` | No Rust toolchain is available, so the Action cannot build Canary from source. | On a self-hosted or non-Ubuntu runner, install a toolchain first — e.g. a `dtolnay/rust-toolchain` step ahead of this Action; [`examples/self-hosted.yml`](examples/self-hosted.yml) shows a complete workflow. GitHub-hosted Ubuntu runners include one by default; seeing this there usually means an earlier step removed it from `PATH`. |
 | ``` `cargo install` exited with code 101 while installing Protocol-Canary … ``` | The source build failed — most often a Rust toolchain too old for Canary's `Cargo.toml`, a corrupted build cache, or a transient network failure while fetching crates. | Re-run the job once to rule out a transient failure. If it persists, update the runner's Rust toolchain. Cargo's own error output appears in the log above this message; `ACTIONS_STEP_DEBUG: true` adds more detail. |
 | `Stellar Protocol Canary timed out after Ns and was terminated.` | Canary ran longer than `timeout-minutes` (default 15; it bounds only the Canary process, not the whole job) and was killed. | Raise `timeout-minutes` if your fixture set legitimately needs longer. Otherwise check whether a live-RPC check is hanging on an unreachable `rpc-url`. |
+| `` `cargo install` … timed out after Ns and was terminated. `` | The `cargo install` step ran longer than `timeout-minutes` (floored at one minute — see [Timeouts](#timeouts)) and was killed. | Re-run the job; this is usually a stalled network fetch. Raise `timeout-minutes` if a build of this size legitimately needs longer. Cargo's own progress output appears in the log above this message. |
 | `Failed to start …: spawn … ENOENT` | The installed Canary binary could not be launched at all. | Typical on a self-hosted runner with an incompatible architecture or libc. Verify the runner can execute binaries built by its own toolchain, then re-run the job to force a fresh install. |
 | `Canary produced no output to parse as a JSON report.` / `Canary's output could not be parsed as JSON: …` | Canary exited without emitting a valid JSON report on stdout — killed mid-run, crashed, or a release this Action cannot parse. | Re-run the job. The step log shows the exact command the Action ran; run it locally to see Canary's stderr. Check that `version` is one of the releases in the [supported versions table](#supported-canary-versions) — older releases' reports predate the `counts` field this Action accepts. |
 | `Unsupported report schemaVersion N (this Action supports schemaVersion 1).` | The installed Canary release emits a newer report schema than this Action understands. | Pin `version` to a release from the supported versions table, or wait for a release of this Action that declares support for the new schema (schema changes are called out in [Versioning](#versioning)). |
@@ -170,6 +171,29 @@ what to do about each.
 `timeout-minutes`, and the boolean inputs) state the expected format in
 the message itself; see [Inputs](#inputs) for each input's accepted
 values.
+
+## Timeouts
+
+The `timeout-minutes` input bounds the time this Action spends on the two
+long-running operations it controls:
+
+- **The Canary process** (`stellar-canary check`): terminated when it runs
+  longer than `timeout-minutes`.
+- **The installation** (`cargo install --git … canary-cli`, a network- and
+  build-bound operation): also terminated when it runs longer than
+  `timeout-minutes`, with a one-minute floor so a very small `timeout-minutes`
+  set purely for the check cannot break installation. A timed-out install
+  fails the step with a distinct "`cargo install` … timed out" message rather
+  than the check's "Stellar Protocol Canary timed out" message.
+
+In both cases the hung process is sent `SIGTERM` and, if it ignores that,
+`SIGKILL` after a short grace period, so neither operation can block the job
+until GitHub's much longer job-level `timeout-minutes` steps in with a
+generic error and no Canary diagnostic.
+
+GitHub Actions' own job- and step-level `timeout-minutes` are unrelated: set
+any surrounding job- or step-level timeout comfortably higher than this
+input, or GitHub's timeout can terminate the step first.
 
 ## Artifacts
 

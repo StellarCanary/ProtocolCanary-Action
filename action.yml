@@ -86,14 +86,15 @@ inputs:
   timeout-minutes:
     description: >-
       Maximum time to let the Canary process run before it is terminated
-      and the Action fails with a timeout error. This bounds only the
-      `stellar-canary check` process, not `cargo install` or the rest of
-      the job. It is unrelated to GitHub Actions' own job/step-level
-      `timeout-minutes`, which the platform enforces over the whole job:
-      set any surrounding job- or step-level `timeout-minutes`
-      comfortably higher than this value, otherwise GitHub's own timeout
-      can terminate the step first with a generic error and no Canary
-      summary, annotations, or timeout diagnostic.
+      and the Action fails with a timeout error. Also bounds the
+      `cargo install` step (floored at one minute, so a very small value
+      set purely for the check cannot break installation); see the README's
+      Timeouts section. It is unrelated to GitHub Actions' own
+      job/step-level `timeout-minutes`, which the platform enforces over
+      the whole job: set any surrounding job- or step-level
+      `timeout-minutes` comfortably higher than this value, otherwise
+      GitHub's own timeout can terminate the step first with a generic
+      error and no Canary summary, annotations, or timeout diagnostic.
     required: false
     default: "15"
 

@@ -5,7 +5,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { CanaryNotFoundError, InstallationFailedError } from "./errors";
+import {
+  CanaryExecutionFailedError,
+  CanaryNotFoundError,
+  InstallationFailedError,
+  TimeoutError,
+} from "./errors";
+import { CARGO_INSTALL_TIMEOUT_FLOOR_MS, CheckExecutionResult, runCheck } from "./runner";
 import { CANARY_REPO_URL, ResolvedVersion } from "./version";
 
 export interface InstalledCanary {
@@ -113,7 +119,8 @@ async function ensureCargoAvailable(): Promise<void> {
   }
 }
 
-async function cargoInstall(resolved: ResolvedVersion): Promise<void> {
+/** Builds the `cargo install` argument array for the resolved version. */
+function buildInstallArgs(resolved: ResolvedVersion): string[] {
   const args = ["install", "--git", CANARY_REPO_URL, "--locked"];
   if (resolved.commitSha !== undefined) {
     args.push("--rev", resolved.commitSha);
@@ -125,12 +132,60 @@ async function cargoInstall(resolved: ResolvedVersion): Promise<void> {
     args.push("--tag", resolved.tag);
   }
   args.push("canary-cli");
+  return args;
+}
+
+/** Maps a `runCheck` rejection onto the install-failure error taxonomy. */
+function describeInstallFailure(error: unknown, timeoutMs: number, resolved: ResolvedVersion): Error {
+  if (error instanceof TimeoutError) {
+    return new InstallationFailedError(
+      `\`cargo install\` for Protocol-Canary ${resolved.version} timed out after ` +
+        `${String(Math.round(timeoutMs / 1000))}s and was terminated. ` +
+        "This is usually a stalled network connection or an extremely slow build on the runner. " +
+        "Re-run the job, or raise the Action's `timeout-minutes` input if a build of this size " +
+        "legitimately needs longer.",
+    );
+  }
+  if (error instanceof CanaryExecutionFailedError) {
+    return new InstallationFailedError(
+      `Failed to start \`cargo install\` for Protocol-Canary ${resolved.version}: ${error.message}`,
+    );
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+/**
+ * Time bound for the `cargo install` process: the Action's own
+ * `timeout-minutes` input, floored at one minute so a check-only timeout
+ * set below it cannot break installation. `cargo install` clones a git
+ * repository and builds it from source, so a hung network fetch or a stuck
+ * build must be terminated by this Action's own timeout path (which
+ * reports a clear, Canary-specific error) rather than burning runner
+ * minutes until GitHub's much longer job-level timeout steps in.
+ */
+export function cargoInstallTimeoutMs(timeoutMinutes: number): number {
+  return Math.max(timeoutMinutes * 60_000, CARGO_INSTALL_TIMEOUT_FLOOR_MS);
+}
+
+async function cargoInstall(resolved: ResolvedVersion, timeoutMs: number): Promise<void> {
+  const args = buildInstallArgs(resolved);
 
   core.info(`Installing stellar-canary ${resolved.version} with: cargo ${args.join(" ")}`);
-  const exitCode = await exec.exec("cargo", args, { ignoreReturnCode: true });
-  if (exitCode !== 0) {
+  // The install is executed through the same bounded runner as
+  // `stellar-canary check` so it can never hang indefinitely: the timeout
+  // terminates a hung process (SIGTERM, then SIGKILL after the grace
+  // period) instead of leaving the job blocked until GitHub's job-level
+  // timeout (see issue #65).
+  let execution: CheckExecutionResult;
+  try {
+    execution = await runCheck("cargo", args, timeoutMs);
+  } catch (error) {
+    throw describeInstallFailure(error, timeoutMs, resolved);
+  }
+  if (execution.exitCode !== 0) {
     throw new InstallationFailedError(
-      `\`cargo install\` exited with code ${String(exitCode)} while installing Protocol-Canary ${resolved.version}.`,
+      `\`cargo install\` exited with code ${String(execution.exitCode)} while installing ` +
+        `Protocol-Canary ${resolved.version}.`,
     );
   }
 }
@@ -141,8 +196,14 @@ async function cargoInstall(resolved: ResolvedVersion): Promise<void> {
  * build, or a fresh `cargo install` pinned to the resolved commit (falling
  * back to the tag if the commit could not be resolved). Never silently
  * falls back to a different version.
+ *
+ * The install step is bounded by `installTimeoutMs` and terminated when it
+ * exceeds it.
  */
-export async function ensureCanaryInstalled(resolved: ResolvedVersion): Promise<InstalledCanary> {
+export async function ensureCanaryInstalled(
+  resolved: ResolvedVersion,
+  installTimeoutMs: number = cargoInstallTimeoutMs(15),
+): Promise<InstalledCanary> {
   const existing = await findExisting(resolved);
   if (existing !== undefined) {
     return existing;
@@ -154,7 +215,7 @@ export async function ensureCanaryInstalled(resolved: ResolvedVersion): Promise<
   }
 
   await ensureCargoAvailable();
-  await cargoInstall(resolved);
+  await cargoInstall(resolved, installTimeoutMs);
 
   const binaryPath = path.join(cargoBinDir(), binaryName());
   const version = await getInstalledVersion(binaryPath);
