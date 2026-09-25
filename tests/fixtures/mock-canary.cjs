@@ -15,6 +15,24 @@ const args = process.argv.slice(2);
 const scenario = process.env.MOCK_CANARY_SCENARIO ?? "pass";
 const version = process.env.MOCK_CANARY_VERSION ?? "0.1.0";
 
+/**
+ * Builds a schemaVersion-1 report object with baseline defaults
+ * (`status: "pass"`, zeroed `counts`, empty `results`, fixed `git` info,
+ * and `toolVersion` from MOCK_CANARY_VERSION).
+ *
+ * The merge is shallow: `Object.assign` copies top-level keys, so an
+ * override replaces a whole field rather than merging into it. Pass
+ * `counts` in full, or omit it and mutate the returned object (as the
+ * `pass-no-counts` scenario does with `delete report.counts`).
+ *
+ * Unlike {@link emit} and {@link fail}, this only returns a value — it
+ * writes nothing and does not exit, so callers are free to adjust the
+ * object before producing output.
+ *
+ * @param {object} [overrides] Top-level fields to merge over the defaults,
+ *   e.g. `{ status: "fail", counts: {...}, results: [...] }`.
+ * @returns {object} A fresh report object; the caller owns it.
+ */
 function baseReport(overrides) {
   return Object.assign(
     {
@@ -31,11 +49,41 @@ function baseReport(overrides) {
   );
 }
 
+/**
+ * Prints `report` to stdout as a single line of JSON, then TERMINATES THE
+ * PROCESS with `exitCode`. Use this for any scenario where Canary runs far
+ * enough to produce a report — including a compatibility failure, which is
+ * still a successful execution.
+ *
+ * Because it exits, it never returns to the `switch` case that called it;
+ * the `break` statements after each call are kept only for readability.
+ *
+ * @param {object} report The report to serialize, normally built by
+ *   {@link baseReport}.
+ * @param {number} exitCode Exit code to terminate with, per the contract in
+ *   `src/output.ts`: 0 pass, 1 compatibility_failure, 3 execution_error.
+ * @returns {never} Never returns.
+ */
 function emit(report, exitCode) {
   process.stdout.write(JSON.stringify(report) + "\n");
   process.exit(exitCode);
 }
 
+/**
+ * Writes `error: <message>` to stderr, then TERMINATES THE PROCESS with
+ * `exitCode`. Writes nothing to stdout, so the Action sees no report —
+ * use this for failures that happen before one can be built
+ * (`config-error`, `fixture-error`, `internal-error`, and an unknown
+ * subcommand), as opposed to a per-fixture error inside a report, which
+ * goes through {@link emit}.
+ *
+ * @param {number} exitCode Exit code to terminate with, per the contract in
+ *   `src/output.ts`: 2 configuration_error, 4 invalid_fixture,
+ *   5 internal_error.
+ * @param {string} message Diagnostic text, written to stderr prefixed with
+ *   `error: `.
+ * @returns {never} Never returns.
+ */
 function fail(exitCode, message) {
   process.stderr.write(`error: ${message}\n`);
   process.exit(exitCode);

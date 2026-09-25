@@ -1,21 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { CanaryReport } from "../../src/output";
 import { renderExecutionFailureMarkdown, renderSummaryMarkdown } from "../../src/summary";
-
-function report(overrides: Partial<CanaryReport>): CanaryReport {
-  return {
-    schemaVersion: 1,
-    toolVersion: "0.1.0",
-    targetProtocol: 28,
-    project: { name: "example-project", type: "soroban" },
-    status: "pass",
-    counts: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 },
-    results: [],
-    git: { commit: null, branch: null, isDirty: null },
-    ...overrides,
-  };
-}
+import { report, result } from "./helpers";
 
 describe("renderSummaryMarkdown", () => {
   it("renders a passing report", () => {
@@ -24,17 +10,9 @@ describe("renderSummaryMarkdown", () => {
         status: "pass",
         counts: { total: 3, passed: 3, failed: 0, warnings: 0, errors: 0, skipped: 0 },
         results: [
-          { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", durationMs: 1, fixtureId: "a" },
-          { testId: "b", protocol: 28, surface: "rpc", status: "pass", summary: "ok", durationMs: 1, fixtureId: "b" },
-          {
-            testId: "c",
-            protocol: 28,
-            surface: "soroban",
-            status: "pass",
-            summary: "ok",
-            durationMs: 1,
-            fixtureId: "c",
-          },
+          result({ testId: "a", surface: "xdr", fixtureId: "a" }),
+          result({ testId: "b", surface: "rpc", fixtureId: "b" }),
+          result({ testId: "c", surface: "soroban", fixtureId: "c" }),
         ],
       }),
     );
@@ -53,16 +31,14 @@ describe("renderSummaryMarkdown", () => {
         status: "fail",
         counts: { total: 1, passed: 0, failed: 1, warnings: 0, errors: 0, skipped: 0 },
         results: [
-          {
+          result({
             testId: "p28-xdr-cap83-001",
-            protocol: 28,
             surface: "xdr",
             status: "fail",
             summary: "could not satisfy the compatibility assertion",
             details: "byte 12 differs",
-            durationMs: 1,
             fixtureId: "p28-xdr-cap83-001",
-          },
+          }),
         ],
       }),
     );
@@ -79,9 +55,7 @@ describe("renderSummaryMarkdown", () => {
       report({
         status: "pass",
         counts: { total: 1, passed: 1, failed: 0, warnings: 0, errors: 0, skipped: 0 },
-        results: [
-          { testId: "a", protocol: 28, surface: "xdr", status: "pass", summary: "ok", durationMs: 1, fixtureId: "a" },
-        ],
+        results: [result({ testId: "a", surface: "xdr", fixtureId: "a" })],
       }),
     );
     expect(markdown).not.toContain("| RPC |");

@@ -1,0 +1,59 @@
+# Running this Action on a self-hosted runner.
+#
+# GitHub-hosted Ubuntu runners ship with a Rust/Cargo toolchain, so the
+# other examples under `examples/` can invoke this Action directly. A
+# self-hosted (or otherwise non-Ubuntu) runner does not necessarily have
+# one. Protocol-Canary does not yet publish prebuilt binaries, so this
+# Action installs it from source with `cargo install` — which means the
+# runner needs `cargo` on `PATH` before the Action runs. Install a Rust
+# toolchain first (for example with `dtolnay/rust-toolchain`); otherwise
+# the Action fails early with a clear installation error:
+#
+#   The `cargo` command was not found on this runner. ... on a
+#   self-hosted or non-Ubuntu runner, install one first.
+name: Stellar Compatibility (self-hosted)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    # Replace these labels with the ones your self-hosted runner registers,
+    # for example `[self-hosted, linux, x64]` or a single custom label.
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The extra step a self-hosted runner needs: GitHub-hosted Ubuntu
+      # runners include Cargo, but a self-hosted runner must install a Rust
+      # toolchain before this Action can `cargo install` Protocol-Canary.
+      # Pin to a specific version (e.g. `@1.82.0`) instead of `@stable` if
+      # you need a reproducible toolchain.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Stellar Protocol Canary
+        id: canary
+        uses: StellarCanary/ProtocolCanary-Action@v1
+        with:
+          protocol: "28"
+          # Live RPC/Soroban checks run against this endpoint, so the
+          # self-hosted machine needs outbound network access to it. Drop
+          # `network`/`rpc-url` if your `.stellar-canary.toml` disables the
+          # network-dependent surfaces.
+          network: testnet
+          rpc-url: https://soroban-testnet.stellar.org
+
+      # Optional: use the Action's own outputs elsewhere in the workflow.
+      - name: Show result
+        if: always()
+        run: |
+          echo "status: ${{ steps.canary.outputs.status }}"
+          echo "passed: ${{ steps.canary.outputs.passed }}"
+          echo "failures: ${{ steps.canary.outputs.failures }}"
