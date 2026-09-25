@@ -22,6 +22,13 @@ function binaryName(): string {
   return process.platform === "win32" ? "stellar-canary.exe" : "stellar-canary";
 }
 
+/**
+ * Runs `<binaryPath> version` and extracts the reported version string.
+ * This is the single source of truth for every "does an existing or cached
+ * binary actually match the request?" decision in the install chain.
+ * Returns `undefined` when the binary cannot be executed or exits non-zero,
+ * which callers treat as "not usable" and fall through to the next step.
+ */
 async function getInstalledVersion(binaryPath: string): Promise<string | undefined> {
   try {
     let stdout = "";
@@ -45,6 +52,12 @@ async function getInstalledVersion(binaryPath: string): Promise<string | undefin
   }
 }
 
+/**
+ * Looks for an already-installed binary in the cargo bin directory. Only an
+ * exact version match counts: a binary reporting any other version returns
+ * `undefined` so the caller falls through to the cache/install steps rather
+ * than running the wrong Canary.
+ */
 async function findExisting(resolved: ResolvedVersion): Promise<InstalledCanary | undefined> {
   const candidatePath = path.join(cargoBinDir(), binaryName());
   if (!fs.existsSync(candidatePath)) {
@@ -58,11 +71,23 @@ async function findExisting(resolved: ResolvedVersion): Promise<InstalledCanary 
   return undefined;
 }
 
+/**
+ * Derives the cache key for a resolved version. The immutable commit SHA is
+ * preferred over the tag so a re-pointed tag can never alias a cached build
+ * produced from a different commit.
+ */
 function cacheKeyFor(resolved: ResolvedVersion): string {
   const pin = resolved.commitSha ?? resolved.tag;
   return `stellar-canary-${process.platform}-${process.arch}-${pin}`;
 }
 
+/**
+ * Attempts to restore a previously built binary from the Actions cache.
+ * Returns `undefined` — always falling through to a fresh install — when the
+ * cache is unavailable, there is no hit, the restored binary's version does
+ * not match, or the restore throws. Caching is a pure optimization, so a
+ * failure here is never surfaced as an error.
+ */
 async function restoreFromCache(resolved: ResolvedVersion): Promise<InstalledCanary | undefined> {
   if (!cache.isFeatureAvailable()) {
     return undefined;
@@ -87,6 +112,11 @@ async function restoreFromCache(resolved: ResolvedVersion): Promise<InstalledCan
   }
 }
 
+/**
+ * Best-effort stores a freshly installed binary under the version's cache
+ * key. Returns nothing and never throws: a failed save only loses the
+ * optimization for later runs, so it is logged at debug level and ignored.
+ */
 async function saveToCache(resolved: ResolvedVersion, binaryPath: string): Promise<void> {
   if (!cache.isFeatureAvailable()) {
     return;
@@ -99,6 +129,12 @@ async function saveToCache(resolved: ResolvedVersion, binaryPath: string): Promi
   }
 }
 
+/**
+ * Verifies the `cargo` toolchain is on the PATH before attempting a source
+ * install. Throws an {@link InstallationFailedError} with remediation
+ * guidance (rather than a generic error) when it is missing, so the failure
+ * is reported as an install problem the user can act on.
+ */
 async function ensureCargoAvailable(): Promise<void> {
   try {
     await exec.exec("cargo", ["--version"], { silent: true });
@@ -113,6 +149,12 @@ async function ensureCargoAvailable(): Promise<void> {
   }
 }
 
+/**
+ * Installs Canary from source with `cargo install --git --locked`, pinned to
+ * the resolved commit when available and otherwise to the tag (with a
+ * visible warning about the weaker integrity pinning). Throws an
+ * {@link InstallationFailedError} on a non-zero exit code.
+ */
 async function cargoInstall(resolved: ResolvedVersion): Promise<void> {
   const args = ["install", "--git", CANARY_REPO_URL, "--locked"];
   if (resolved.commitSha !== undefined) {
