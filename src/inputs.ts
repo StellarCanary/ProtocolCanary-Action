@@ -69,7 +69,14 @@ function parseProtocol(raw: string): number | undefined {
 
 /** Validates the "config" input as a path to an existing file, resolved
  * against the current working directory; undefined when unset. Throws
- * {@link ConfigNotFoundError} when the path does not exist. */
+ * {@link ConfigNotFoundError} (naming the path as written) when the file does
+ * not exist.
+ *
+ * Returns the *resolved* path rather than the raw input. The existence check
+ * above already runs against `path.resolve(value)`, so returning the
+ * unresolved string would leave the path that was validated and the path
+ * forwarded to the CLI as `--config` dependent on the two sharing a working
+ * directory. Returning `resolved` keeps them the same path by construction. */
 function parseConfig(raw: string): string | undefined {
   const value = optional(raw);
   if (value === undefined) {
@@ -79,7 +86,7 @@ function parseConfig(raw: string): string | undefined {
   if (!fs.existsSync(resolved)) {
     throw new ConfigNotFoundError(value);
   }
-  return value;
+  return resolved;
 }
 
 /** Validates the "rpc-url" input as a parseable URL and enforces the scheme

@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- Quick start now says that `fixtures-dir` defaults to `fixtures` and that
+  a fresh checkout has no such directory, pointing at
+  `examples/protocol-28.yml` for a complete workflow; CONTRIBUTING.md
+  notes that Dependabot opens its own dependency PRs under the same
+  review expectations; the pull request template now prompts for an
+  `[Unreleased]` entry on user-facing changes.
+
 ## [0.1.1]
 
 ### Changed
