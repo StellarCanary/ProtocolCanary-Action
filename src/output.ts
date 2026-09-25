@@ -172,6 +172,11 @@ const EXIT_CODES: Readonly<Record<number, ExitCodeInfo>> = {
   5: { category: "internal_error", description: "Canary encountered an internal error." },
 };
 
+/**
+ * Describes a `stellar-canary` exit code according to the
+ * `crates/canary-core/src/errors.rs` contract. Unrecognized codes fall back
+ * to the `unknown` category.
+ */
 export function describeExitCode(code: number): ExitCodeInfo {
   return EXIT_CODES[code] ?? { category: "unknown", description: `Unrecognized exit code ${String(code)}.` };
 }
