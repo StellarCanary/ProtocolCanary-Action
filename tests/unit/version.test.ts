@@ -1,6 +1,16 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { debugMock, warningMock } = vi.hoisted(() => ({
+  debugMock: vi.fn(),
+  warningMock: vi.fn(),
+}));
+
+vi.mock("@actions/core", () => ({
+  debug: debugMock,
+  warning: warningMock,
+}));
+
 vi.mock("node:https", () => ({
   get: vi.fn(),
 }));
@@ -45,6 +55,8 @@ function mockHttpsResponse(statusCode: number, body: string): void {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  debugMock.mockReset();
+  warningMock.mockReset();
 });
 
 describe("resolveVersion", () => {
@@ -54,16 +66,22 @@ describe("resolveVersion", () => {
     expect(resolved).toEqual({ version: "0.1.0", tag: "v0.1.0", commitSha: "abc123" });
   });
 
-  it("degrades to commitSha undefined when the tag is not found", async () => {
+  it("warns and degrades to commitSha undefined when the tag is not found", async () => {
     mockHttpsResponse(200, JSON.stringify([{ name: "v9.9.9", commit: { sha: "zzz" } }]));
     const resolved = await resolveVersion("0.1.0");
     expect(resolved.commitSha).toBeUndefined();
     expect(resolved.tag).toBe("v0.1.0");
+    expect(warningMock).toHaveBeenCalledWith(
+      "Could not find tag v0.1.0; falling back to tag pinning with weaker integrity guarantees.",
+    );
+    expect(debugMock).not.toHaveBeenCalled();
   });
 
   it("degrades to commitSha undefined on a non-200 response, never throwing", async () => {
     mockHttpsResponse(503, "");
     await expect(resolveVersion("0.1.0")).resolves.toMatchObject({ commitSha: undefined });
+    expect(warningMock).not.toHaveBeenCalled();
+    expect(debugMock).toHaveBeenCalled();
   });
 
   it("degrades to commitSha undefined on malformed JSON, never throwing", async () => {

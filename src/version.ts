@@ -14,6 +14,8 @@ export const CANARY_REPO_OWNER = "StellarCanary";
 export const CANARY_REPO_NAME = "Protocol-Canary";
 export const CANARY_REPO_URL = `https://github.com/${CANARY_REPO_OWNER}/${CANARY_REPO_NAME}.git`;
 
+class TagNotFoundError extends Error {}
+
 export interface ResolvedVersion {
   /** The bare semantic version, e.g. "0.1.0". */
   readonly version: string;
@@ -36,7 +38,11 @@ export interface ResolvedVersion {
 export async function resolveVersion(version: string): Promise<ResolvedVersion> {
   const tag = `v${version}`;
   const commitSha = await resolveTagCommit(tag).catch((error: unknown) => {
-    core.debug(`Could not resolve ${tag} to a commit sha, falling back to tag pinning: ${String(error)}`);
+    if (error instanceof TagNotFoundError) {
+      core.warning(`Could not find tag ${tag}; falling back to tag pinning with weaker integrity guarantees.`);
+    } else {
+      core.debug(`Could not resolve ${tag} to a commit sha, falling back to tag pinning: ${String(error)}`);
+    }
     return undefined;
   });
   return { version, tag, commitSha };
@@ -89,7 +95,7 @@ function resolveTagCommit(tag: string): Promise<string | undefined> {
             const match = (parsed as GitHubTag[]).find((entry) => entry.name === tag);
             const sha = match?.commit?.sha;
             if (typeof sha !== "string" || sha.length === 0) {
-              reject(new Error(`tag ${tag} not found in the first 100 tags`));
+              reject(new TagNotFoundError(`tag ${tag} not found in the first 100 tags`));
               return;
             }
             resolve(sha);
