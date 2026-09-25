@@ -42,11 +42,20 @@ repository, is the source of truth for the CLI's behavior.
 ## Test commands
 
 ```bash
-npm run typecheck   # tsc --noEmit, strict mode
+npm run typecheck    # tsc --noEmit, strict mode
 npm run lint         # eslint
 npm test             # vitest run (unit + integration)
+npm run test:coverage  # vitest run with v8 coverage over src/ (text, HTML, and lcov reports in coverage/)
 npm run build         # esbuild bundle to dist/index.js
 ```
+
+`npm run test:coverage` runs the same suite as `npm test` with coverage
+measurement enabled (via `@vitest/coverage-v8`; configured in
+`vitest.config.ts` to measure `src/` only). It reports line/branch coverage
+per source file in the terminal, and writes HTML and lcov reports to
+`coverage/` (gitignored). There is no coverage threshold gate today —
+consult the report when touching a file to see whether your change is
+exercised by the suite.
 
 Unit and integration tests must never require network access or a real
 `stellar-canary` binary: they run against
