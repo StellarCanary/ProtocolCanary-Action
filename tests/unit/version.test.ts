@@ -5,6 +5,12 @@ vi.mock("node:https", () => ({
   get: vi.fn(),
 }));
 
+vi.mock("@actions/core", () => ({
+  debug: vi.fn(),
+  warning: vi.fn(),
+}));
+
+import * as core from "@actions/core";
 import * as https from "node:https";
 import { resolveVersion } from "../../src/version";
 
@@ -44,7 +50,7 @@ function mockHttpsResponse(statusCode: number, body: string): void {
 }
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
 });
 
 describe("resolveVersion", () => {
@@ -54,16 +60,25 @@ describe("resolveVersion", () => {
     expect(resolved).toEqual({ version: "0.1.0", tag: "v0.1.0", commitSha: "abc123" });
   });
 
-  it("degrades to commitSha undefined when the tag is not found", async () => {
+  it("warns when the tag is confirmed absent from the upstream tag list", async () => {
     mockHttpsResponse(200, JSON.stringify([{ name: "v9.9.9", commit: { sha: "zzz" } }]));
     const resolved = await resolveVersion("0.1.0");
+
     expect(resolved.commitSha).toBeUndefined();
     expect(resolved.tag).toBe("v0.1.0");
+    expect(vi.mocked(core.warning)).toHaveBeenCalledWith(
+      expect.stringContaining("Could not find upstream tag v0.1.0 in the first 100 tags"),
+    );
+    expect(vi.mocked(core.debug)).not.toHaveBeenCalled();
   });
 
-  it("degrades to commitSha undefined on a non-200 response, never throwing", async () => {
+  it("logs at debug level when the GitHub API call itself fails", async () => {
     mockHttpsResponse(503, "");
     await expect(resolveVersion("0.1.0")).resolves.toMatchObject({ commitSha: undefined });
+    expect(vi.mocked(core.warning)).not.toHaveBeenCalled();
+    expect(vi.mocked(core.debug)).toHaveBeenCalledWith(
+      expect.stringContaining("Could not resolve v0.1.0 to a commit sha"),
+    );
   });
 
   it("degrades to commitSha undefined on malformed JSON, never throwing", async () => {

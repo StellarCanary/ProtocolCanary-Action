@@ -36,6 +36,14 @@ export interface ResolvedVersion {
 export async function resolveVersion(version: string): Promise<ResolvedVersion> {
   const tag = `v${version}`;
   const commitSha = await resolveTagCommit(tag).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes(`tag ${tag} not found in the first 100 tags`)) {
+      core.warning(
+        `Could not find upstream tag ${tag} in the first 100 tags. This usually means the requested version ${version} is mistyped or not yet published; falling back to tag-only pinning.`,
+      );
+      return undefined;
+    }
+
     core.debug(`Could not resolve ${tag} to a commit sha, falling back to tag pinning: ${String(error)}`);
     return undefined;
   });
