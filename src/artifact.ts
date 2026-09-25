@@ -9,8 +9,17 @@ import * as path from "node:path";
  */
 export const ARTIFACT_NAME = "stellar-protocol-canary-report";
 
+/**
+ * Describes the result of an artifact upload attempt.
+ *
+ * `reason` is present only when `uploaded` is `false`; a successful upload
+ * returns `true` without a reason. Upload failures are reported through this
+ * outcome and are not thrown.
+ */
 export interface ArtifactUploadOutcome {
+  /** Whether the report artifact was uploaded successfully. */
   readonly uploaded: boolean;
+  /** The failure reason, present only when `uploaded` is `false`. */
   readonly reason?: string;
 }
 
