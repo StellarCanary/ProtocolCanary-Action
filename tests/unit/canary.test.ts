@@ -39,7 +39,8 @@ vi.mock("@actions/exec", () => ({
 
 import { ensureCanaryInstalled } from "../../src/canary";
 import { CanaryNotFoundError, InstallationFailedError } from "../../src/errors";
-import { CANARY_REPO_URL, ResolvedVersion } from "../../src/version";
+import type { ResolvedVersion } from "../../src/version";
+import { CANARY_REPO_URL } from "../../src/version";
 
 interface ExecCallOptions {
   readonly ignoreReturnCode?: boolean;

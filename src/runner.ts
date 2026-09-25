@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { ActionInputs } from "./inputs";
+import type { ActionInputs } from "./inputs";
 import { CanaryExecutionFailedError, TimeoutError } from "./errors";
 
 export interface CheckExecutionResult {

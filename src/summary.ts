@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 
 import { SummaryPublishFailedError } from "./errors";
-import { CanaryReport, OverallStatus, Surface } from "./output";
+import type { CanaryReport, OverallStatus, Surface } from "./output";
 
 const SURFACE_HEADINGS: Readonly<Record<Surface, string>> = {
   xdr: "XDR",

@@ -114,5 +114,13 @@ filing a public issue. Include:
 - steps to reproduce;
 - the affected version or commit.
 
-We will acknowledge reports and work with you on a fix and disclosure
+We aim to acknowledge new reports within **5 business days**. After
+acknowledging a report, we will work with you on a fix and disclosure
 timeline before any public write-up.
+
+This is a single-maintainer, pre-1.0 project, so the 5-business-day target
+is for the initial acknowledgement only, not for a fix: a fix and its
+release depend on the severity and complexity of the issue. If you have
+not received an acknowledgement within 5 business days, please follow up
+on your existing private report thread rather than opening a public issue,
+so the report is not lost or unintentionally disclosed.

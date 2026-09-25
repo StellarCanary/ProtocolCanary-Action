@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 
-import { CanaryReport } from "./output";
+import type { CanaryReport } from "./output";
 
 const TITLE = "Stellar Protocol Canary";
 
