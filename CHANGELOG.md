@@ -12,13 +12,6 @@ All notable changes to this project are documented in this file.
   config file) to concrete next steps, cross-referenced with the bug
   report template's "Which kind of failure?" checklist; the Outputs table
   now shows an example value for every output.
-
-### Added
-
-- `npm run test:coverage` produces v8 line/branch coverage for `src/`
-  (terminal, HTML, and lcov reports; contributor-facing only — no effect
-  on the Action's behavior).
-
 - Quick start now says that `fixtures-dir` defaults to `fixtures` and that
   a fresh checkout has no such directory, pointing at
   `examples/protocol-28.yml` for a complete workflow; CONTRIBUTING.md
@@ -29,6 +22,36 @@ All notable changes to this project are documented in this file.
   "How failures appear" now shows the actual rendered job summary for a
   passing run, a run with failures/warnings, and an execution failure,
   instead of describing the format only in prose.
+
+### Added
+
+- Checksum verification: when `StellarCanary/Protocol-Canary` publishes a
+  checksum manifest alongside a release, the installed or cached binary is
+  verified against it before use, and a mismatch fails the run with an
+  `InstallationFailed` error. Until such a manifest exists the check is a
+  no-op debug log, so commit/tag pinning is unchanged — see `SECURITY.md`.
+- `npm run test:coverage` produces v8 line/branch coverage for `src/`
+  (terminal, HTML, and lcov reports; contributor-facing only — no effect
+  on the Action's behavior).
+
+### Changed
+
+- The tag lookup that pins installs to an immutable commit now sends a
+  `GITHUB_TOKEN` bearer credential when one is available and follows
+  pagination across every page of the tags endpoint. A shared runner IP
+  hitting the 60/hour unauthenticated limit, or a repository growing past
+  100 tags, can no longer silently degrade installation to tag-based
+  pinning.
+- Third-party actions in `.github/workflows/*.yml` are pinned to full
+  commit SHAs (with the human-readable version kept as a trailing comment)
+  instead of mutable version tags, closing a supply-chain hole — most
+  importantly in `release.yml`, which runs with `contents: write`.
+
+### Testing
+
+- Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
+  child process, for cleanup of those listeners after settling, and for the
+  cancellation branch where the child exits with a null code and a signal.
 
 ## [0.1.1]
 

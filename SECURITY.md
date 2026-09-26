@@ -28,12 +28,19 @@ permissions:
 ```
 
 The Action does not call the GitHub API on your repository at all for its
-core function (it does call the public, unauthenticated GitHub REST API
-for `StellarCanary/Protocol-Canary` itself, to resolve a release tag to a
-commit — see [Installation integrity](#installation-integrity)). Future
-features that need PR comments or check runs will document their own,
-separately scoped, permission requirements rather than making write access
-a default requirement.
+core function. It does call the public GitHub REST API for
+`StellarCanary/Protocol-Canary` itself — to resolve a release tag to a
+commit and to look for a published checksum manifest (see
+[Installation integrity](#installation-integrity)). When the workflow makes
+`secrets.GITHUB_TOKEN` available in the environment, those reads are
+authenticated with it, which only raises the GitHub API rate limit (60 to
+1,000+ requests/hour, important because GitHub-hosted runners share source
+IPs); when no token is available they fall back to unauthenticated reads.
+No token is required for the core function, and this Action never reads or
+writes *your* repository through the API. Future features that need PR
+comments or check runs will document their own, separately scoped,
+permission requirements rather than making write access a default
+requirement.
 
 ## Installation integrity
 
@@ -56,12 +63,26 @@ which:
   compatible versions happen to be at build time;
 - never executes a downloaded script — the toolchain performing the build
   is `cargo`, already present on the runner, not something this Action
-  fetches and runs.
+  fetches and runs;
+- verifies the installed or cached binary against the checksum manifest
+  published with the release, when one exists, and refuses to use a binary
+  that does not match (see [Checksum verification](#checksum-verification)).
 
-If `Protocol-Canary` begins publishing checksummed release artifacts, this
-Action should move to verifying those directly, since a compiled-from-a
--pinned-commit build is a weaker integrity story than a checksum published
-by the artifact's own maintainers.
+### Checksum verification
+
+When the requested `Protocol-Canary` release publishes a checksum manifest
+(for example `SHA256SUMS`) as a release asset, this Action downloads it,
+hashes the binary it is about to run, and compares the two. A mismatch
+throws an `InstallationFailed` error and the binary is never executed.
+
+`Protocol-Canary` does not publish checksums yet, so the lookup normally
+finds nothing and this step is a no-op that logs a debug line. That
+fallback to commit/tag pinning is deliberate and is the documented,
+unchanged behavior: the checksum step only ever *adds* a guarantee when a
+manifest exists, and its absence never weakens the existing pinning.
+A compiled-from-a-pinned-commit build is still a weaker integrity story
+than a checksum published by the artifact's own maintainers, so making
+checksum-verified installs the primary path remains the goal.
 
 ## Subprocess isolation
 
@@ -79,7 +100,11 @@ Pull request source code is treated as untrusted. This Action:
 ## Secret handling
 
 This Action never dumps the process environment and never prints a GitHub
-token. It does not require any secret for its core function. If a
+token. When `GITHUB_TOKEN` is present it is used only as a bearer
+credential for read-only requests to the public
+`StellarCanary/Protocol-Canary` API, and is never echoed to logs,
+outputs, or the job summary. The Action does not require any secret for
+its core function. If a
 workflow's `rpc-url` happens to embed a credential in its query string
 (not a pattern this project recommends), that is echoed only insofar as
 Canary itself might log it — the same as any other CLI argument a workflow
