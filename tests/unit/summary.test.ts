@@ -91,6 +91,38 @@ describe("renderSummaryMarkdown", () => {
     expect(markdown).toContain("p27-xdr-legacy");
   });
 
+  it("renders the network name with the observed protocol suffix when both are present", () => {
+    // `network` is populated whenever a network/rpc-url is used (see the
+    // example workflows), so this branch is not an edge case: the
+    // "— observed protocol N" suffix is the part most likely to regress
+    // silently.
+    const markdown = renderSummaryMarkdown(
+      report({
+        network: { name: "testnet", observedProtocol: 28 },
+        results: [result({ testId: "a", surface: "rpc", fixtureId: "a" })],
+      }),
+    );
+
+    expect(markdown).toContain("Network: testnet — observed protocol 28");
+  });
+
+  it("renders the network name without the suffix when observedProtocol is absent", () => {
+    const markdown = renderSummaryMarkdown(
+      report({
+        network: { name: "testnet" },
+        results: [result({ testId: "a", surface: "rpc", fixtureId: "a" })],
+      }),
+    );
+
+    expect(markdown).toContain("Network: testnet\n");
+    expect(markdown).not.toContain("observed protocol");
+  });
+
+  it("omits the network line entirely when the report has no network", () => {
+    const markdown = renderSummaryMarkdown(report({}));
+    expect(markdown).not.toContain("Network:");
+  });
+
   it("never fabricates a result: an empty results array renders as a trivial pass with no surface rows", () => {
     const markdown = renderSummaryMarkdown(report({ status: "pass" }));
     expect(markdown).not.toContain("| XDR |");
