@@ -20,21 +20,24 @@ afterEach(() => {
 });
 
 describe("emitAnnotations", () => {
-  it("emits an error annotation for a fail result", () => {
+  it("emits an error annotation for a fail result with compatibility failure label", () => {
     emitAnnotations(report([result({ status: "fail", testId: "p28-xdr-1", summary: "decode failed" })]));
     expect(errorMock).toHaveBeenCalledTimes(1);
     expect(errorMock.mock.calls[0]?.[0]).toContain("p28-xdr-1");
+    expect(errorMock.mock.calls[0]?.[0]).toContain("[compatibility failure]");
     expect(errorMock.mock.calls[0]?.[1]).toMatchObject({ title: "Stellar Protocol Canary" });
   });
 
-  it("emits an error annotation for an error result", () => {
+  it("emits an error annotation for an error result with execution error label", () => {
     emitAnnotations(report([result({ status: "error", testId: "p28-rpc-1" })]));
     expect(errorMock).toHaveBeenCalledTimes(1);
+    expect(errorMock.mock.calls[0]?.[0]).toContain("[execution error]");
   });
 
-  it("emits a warning annotation for a warning result", () => {
+  it("emits a warning annotation for a warning result with warning label", () => {
     emitAnnotations(report([result({ status: "warning", testId: "p28-rpc-2" })]));
     expect(warningMock).toHaveBeenCalledTimes(1);
+    expect(warningMock.mock.calls[0]?.[0]).toContain("[warning]");
   });
 
   it("never annotates a pass or skipped result", () => {
