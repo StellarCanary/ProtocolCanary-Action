@@ -365,6 +365,9 @@ Action and will be called out here explicitly.
 
 - This Action depends on a compatible `Protocol-Canary` release; see the
   version table above.
+- Only Protocol 28 has fixtures published upstream in
+  [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
+  at this time.
 - Network-dependent checks (RPC, Soroban) can fail if the configured RPC
   endpoint is temporarily unavailable — that is a real result, not an
   Action bug.
