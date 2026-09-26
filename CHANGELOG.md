@@ -25,6 +25,10 @@ All notable changes to this project are documented in this file.
   notes that Dependabot opens its own dependency PRs under the same
   review expectations; the pull request template now prompts for an
   `[Unreleased]` entry on user-facing changes.
+- README.md gained a Table of Contents linking every top-level section, and
+  "How failures appear" now shows the actual rendered job summary for a
+  passing run, a run with failures/warnings, and an execution failure,
+  instead of describing the format only in prose.
 
 ## [0.1.1]
 
