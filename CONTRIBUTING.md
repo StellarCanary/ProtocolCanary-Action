@@ -42,11 +42,20 @@ repository, is the source of truth for the CLI's behavior.
 ## Test commands
 
 ```bash
-npm run typecheck   # tsc --noEmit, strict mode
+npm run typecheck    # tsc --noEmit, strict mode
 npm run lint         # eslint
 npm test             # vitest run (unit + integration)
+npm run test:coverage  # vitest run with v8 coverage over src/ (text, HTML, and lcov reports in coverage/)
 npm run build         # esbuild bundle to dist/index.js
 ```
+
+`npm run test:coverage` runs the same suite as `npm test` with coverage
+measurement enabled (via `@vitest/coverage-v8`; configured in
+`vitest.config.ts` to measure `src/` only). It reports line/branch coverage
+per source file in the terminal, and writes HTML and lcov reports to
+`coverage/` (gitignored). There is no coverage threshold gate today —
+consult the report when touching a file to see whether your change is
+exercised by the suite.
 
 Unit and integration tests must never require network access or a real
 `stellar-canary` binary: they run against
@@ -177,7 +186,13 @@ exit-code contract:
 
 ## Release process
 
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md`. Link every entry to the pull request that
+   introduced it with a trailing `([#123])` reference — e.g.
+   "- Add the annotations input ([#42])." — so the diff and discussion
+   for a change are one click away. Entries that predate the repository's
+   pull-request workflow (everything up to and including `v0.1.1`)
+   reference the commit that introduced the change instead, as
+   `([0de71ec])`, since no pull request exists for them.
 2. Update the supported-versions table in `SECURITY.md`: add the new
    version as supported and mark every previously released version
    unsupported, so the table stays in sync with `CHANGELOG.md`'s
@@ -185,7 +200,7 @@ exit-code contract:
 3. Tag `vX.Y.Z` on `main` (annotated tag, matching `package.json`'s
    version). `.github/workflows/release.yml` verifies the build and tests
    for that tag and publishes a GitHub Release.
-3. The floating major tag (e.g. `v1`) is moved automatically by
+4. The floating major tag (e.g. `v1`) is moved automatically by
    `.github/workflows/release.yml`, in the same job, after the release is
    created. No manual step is required. The workflow only ever moves the
    major tag forward: it is left untouched when the pushed tag is not the
