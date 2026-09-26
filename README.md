@@ -49,6 +49,22 @@ All compatibility logic lives in
 Canonical fixtures live in
 [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures).
 
+## Prerequisites
+
+Before following the quick-start example, make sure the runner meets the
+requirements below:
+
+- A Rust/Cargo toolchain is available. This Action installs
+  `Protocol-Canary` from source with `cargo install --git`, so a
+  self-hosted or non-Ubuntu runner must install Rust first; GitHub-hosted
+  Ubuntu runners include Cargo by default.
+- The `version` input matches a real release tag in
+  `StellarCanary/Protocol-Canary`. It is pinned to a specific upstream
+  release and never tracks `main`.
+
+See [Installation & integrity](#installation--integrity) and the `version`
+entry in [Inputs](#inputs) for the full explanation and setup guidance.
+
 ## Quick start
 
 ```yaml
@@ -365,6 +381,9 @@ Action and will be called out here explicitly.
 
 - This Action depends on a compatible `Protocol-Canary` release; see the
   version table above.
+- Only Protocol 28 has fixtures published upstream in
+  [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
+  at this time.
 - Network-dependent checks (RPC, Soroban) can fail if the configured RPC
   endpoint is temporarily unavailable — that is a real result, not an
   Action bug.
