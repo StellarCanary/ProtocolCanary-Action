@@ -132,4 +132,12 @@ describe("describeExitCode", () => {
   it("falls back to unknown for an unrecognized code", () => {
     expect(describeExitCode(99).category).toBe("unknown");
   });
+
+  it("falls back to unknown for a negative code", () => {
+    // A negative code can appear when a process-exec library synthesizes one
+    // from a fatal signal; pin the Record<number, ...> lookup's fallback so a
+    // future EXIT_CODES rework (e.g. a Map or a different default) cannot
+    // silently change behavior for out-of-range input.
+    expect(describeExitCode(-1).category).toBe("unknown");
+  });
 });
