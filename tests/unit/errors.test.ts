@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ConfigNotFoundError,
+  CanaryNotFoundError,
   InvalidInputError,
   describeError,
   isCanaryActionError,
@@ -16,6 +17,10 @@ describe("CanaryActionError hierarchy", () => {
     const error = new ConfigNotFoundError(".stellar-canary.toml");
     expect(error.message).toBe("Configuration file not found: .stellar-canary.toml");
     expect(error.code).toBe("ConfigNotFound");
+  });
+
+  it("sets the CanaryNotFoundError code", () => {
+    expect(new CanaryNotFoundError("boom").code).toBe("CanaryNotFound");
   });
 
   it("isCanaryActionError distinguishes typed errors from arbitrary errors", () => {
