@@ -1,9 +1,44 @@
+import { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { PassThrough } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CanaryExecutionFailedError, TimeoutError } from "../../src/errors";
 import { ActionInputs } from "../../src/inputs";
 import { buildCheckArgs, runCheck } from "../../src/runner";
+
+const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
+
+// Most tests exercise the real mock-canary fixture, so `spawn` defaults to a
+// pass-through of the real implementation; the timeout-escalation tests below
+// swap in a fake child via `mockImplementationOnce`.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  spawnMock.mockImplementation(actual.spawn);
+  return { ...actual, spawn: spawnMock };
+});
+
+/** A `child_process.spawn` result that does nothing until it is signalled. */
+class FakeChild extends EventEmitter {
+  readonly stdout = new PassThrough();
+  readonly stderr = new PassThrough();
+  readonly signals: NodeJS.Signals[] = [];
+
+  /** Whether the fake process exits in response to `SIGTERM` (rather than ignoring it). */
+  constructor(private readonly exitsOnSigterm: boolean) {
+    super();
+  }
+
+  kill(signal: NodeJS.Signals = "SIGTERM"): boolean {
+    this.signals.push(signal);
+    const exits = this.exitsOnSigterm ? signal === "SIGTERM" : signal === "SIGKILL";
+    if (exits) {
+      this.emit("close", null, signal);
+    }
+    return true;
+  }
+}
 
 const MOCK_CANARY = path.join(__dirname, "..", "fixtures", "mock-canary.cjs");
 
@@ -28,6 +63,33 @@ describe("buildCheckArgs", () => {
   it("omits optional flags that were not provided", () => {
     const args = buildCheckArgs({ ...BASE_INPUTS, protocol: undefined });
     expect(args).not.toContain("--protocol");
+  });
+
+  it("omits --network specifically when only network is left unset", () => {
+    // Every optional flag is guarded by its own independent `if` in
+    // `buildCheckArgs`, so a refactor that starts always pushing --network
+    // (e.g. as an empty string) must still be caught here, with the other
+    // optional inputs deliberately left set.
+    const args = buildCheckArgs({
+      ...BASE_INPUTS,
+      network: undefined,
+      rpcUrl: "https://soroban-testnet.stellar.org",
+      config: ".stellar-canary.toml",
+    });
+    expect(args).not.toContain("--network");
+    expect(args).not.toContain("");
+    // The flags that *were* provided are still forwarded, so this cannot
+    // pass by an implementation that drops every optional argument.
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--protocol",
+        "28",
+        "--rpc-url",
+        "https://soroban-testnet.stellar.org",
+        "--config",
+        ".stellar-canary.toml",
+      ]),
+    );
   });
 
   it("forwards network, rpc-url, and config as separate arguments", () => {
@@ -133,5 +195,34 @@ describe("runCheck signal handling", () => {
     // cleanup() removed both forwarding listeners: no leak across runs.
     expect(process.listenerCount("SIGINT")).toBe(baselineInt);
     expect(process.listenerCount("SIGTERM")).toBe(baselineTerm);
+  });
+});
+
+describe("runCheck timeout escalation", () => {
+  afterEach(() => {
+    spawnMock.mockClear();
+  });
+
+  function fakeSpawn(child: FakeChild): void {
+    spawnMock.mockImplementationOnce(() => child as unknown as ChildProcess);
+  }
+
+  it("sends SIGKILL when the process ignores SIGTERM past the grace period", async () => {
+    const child = new FakeChild(false);
+    fakeSpawn(child);
+
+    await expect(runCheck("fake-canary", ["check"], 10, 20)).rejects.toThrow(TimeoutError);
+    expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
+  it("never sends SIGKILL when the process exits after SIGTERM", async () => {
+    const child = new FakeChild(true);
+    fakeSpawn(child);
+
+    await expect(runCheck("fake-canary", ["check"], 10, 20)).rejects.toThrow(TimeoutError);
+    // Wait beyond the grace period: the escalation timer must have been
+    // cleared when the process closed, or SIGKILL would appear here.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(child.signals).toEqual(["SIGTERM"]);
   });
 });

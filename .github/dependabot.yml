@@ -4,6 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    labels:
+      - "dependencies"
 
   # Dependabot's github-actions ecosystem understands SHA-pinned `uses:`
   # references with a trailing `# vX` comment, so it can keep bumping the
@@ -12,3 +14,5 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    labels:
+      - "github_actions"

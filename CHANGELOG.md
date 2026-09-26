@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- README gains a "Troubleshooting" section mapping the most common
+  execution-failure messages (`cargo` not found, `cargo install` exit
+  101, timeouts, unparsable reports, unsupported `schemaVersion`, missing
+  config file) to concrete next steps, cross-referenced with the bug
+  report template's "Which kind of failure?" checklist; the Outputs table
+  now shows an example value for every output.
+- Quick start now says that `fixtures-dir` defaults to `fixtures` and that
+  a fresh checkout has no such directory, pointing at
+  `examples/protocol-28.yml` for a complete workflow; CONTRIBUTING.md
+  notes that Dependabot opens its own dependency PRs under the same
+  review expectations; the pull request template now prompts for an
+  `[Unreleased]` entry on user-facing changes.
+- README.md gained a Table of Contents linking every top-level section, and
+  "How failures appear" now shows the actual rendered job summary for a
+  passing run, a run with failures/warnings, and an execution failure,
+  instead of describing the format only in prose.
+
 ### Added
 
 - Checksum verification: when `StellarCanary/Protocol-Canary` publishes a
@@ -11,6 +30,9 @@ All notable changes to this project are documented in this file.
   verified against it before use, and a mismatch fails the run with an
   `InstallationFailed` error. Until such a manifest exists the check is a
   no-op debug log, so commit/tag pinning is unchanged — see `SECURITY.md`.
+- `npm run test:coverage` produces v8 line/branch coverage for `src/`
+  (terminal, HTML, and lcov reports; contributor-facing only — no effect
+  on the Action's behavior).
 
 ### Changed
 

@@ -44,6 +44,15 @@ export function buildCheckArgs(inputs: ActionInputs): string[] {
 const SIGNALS_TO_FORWARD: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 
 /**
+ * How long a timed-out Canary process is given to exit after `SIGTERM`
+ * before it is forcefully killed with `SIGKILL`. A process that ignores
+ * `SIGTERM` (for example one blocked in an uninterruptible network call)
+ * must not outlive the Action's own timeout, or it would keep burning
+ * runner minutes until GitHub's much longer job timeout.
+ */
+export const SIGKILL_GRACE_MS = 5000;
+
+/**
  * Runs a Canary binary with the given arguments, capturing stdout and
  * stderr separately, enforcing `timeoutMs`, and forwarding cancellation
  * signals to the child process so a cancelled workflow does not leave it
@@ -55,11 +64,18 @@ const SIGNALS_TO_FORWARD: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
  * function. It throws only when the process could not be run at all, or
  * was killed for exceeding its timeout.
  *
- * Takes `args` and `timeoutMs` directly (rather than an `ActionInputs`)
- * so it can be exercised in tests without minute-granularity timeouts;
- * `main.ts` is the only caller that derives these from real inputs.
+ * Takes `args`, `timeoutMs`, and the `sigkillGraceMs` grace period
+ * directly (rather than an `ActionInputs`) so it can be exercised in
+ * tests without minute-granularity timeouts; `main.ts` is the only caller
+ * that derives these from real inputs, and it relies on the default grace
+ * period.
  */
-export function runCheck(binaryPath: string, args: readonly string[], timeoutMs: number): Promise<CheckExecutionResult> {
+export function runCheck(
+  binaryPath: string,
+  args: readonly string[],
+  timeoutMs: number,
+  sigkillGraceMs: number = SIGKILL_GRACE_MS,
+): Promise<CheckExecutionResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 
@@ -67,12 +83,19 @@ export function runCheck(binaryPath: string, args: readonly string[], timeoutMs:
     let stderr = "";
     let settled = false;
     let timedOut = false;
+    let sigkillHandle: NodeJS.Timeout | undefined;
 
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
+      // Arm the escalation timer *before* signalling: if the process closes
+      // synchronously in response to SIGTERM, `cleanup` must see the handle
+      // so it can clear it, rather than leaving an orphaned timer that kills
+      // (or worse, signals a reused pid) after the fact.
+      sigkillHandle = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, sigkillGraceMs);
       child.kill("SIGTERM");
     }, timeoutMs);
-
     const forwardSignal = (signal: NodeJS.Signals): void => {
       child.kill(signal);
     };
@@ -82,6 +105,9 @@ export function runCheck(binaryPath: string, args: readonly string[], timeoutMs:
 
     const cleanup = (): void => {
       clearTimeout(timeoutHandle);
+      if (sigkillHandle !== undefined) {
+        clearTimeout(sigkillHandle);
+      }
       for (const signal of SIGNALS_TO_FORWARD) {
         process.off(signal, forwardSignal);
       }

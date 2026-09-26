@@ -11,34 +11,8 @@ vi.mock("@actions/core", async (importOriginal) => {
 });
 
 import type { AnnotationProperties } from "@actions/core";
-import { CanaryReport, CanaryResult } from "../../src/output";
 import { emitAnnotations, emitExecutionFailureAnnotation } from "../../src/annotations";
-
-function result(overrides: Partial<CanaryResult>): CanaryResult {
-  return {
-    testId: "t",
-    protocol: 28,
-    surface: "xdr",
-    status: "pass",
-    summary: "ok",
-    durationMs: 1,
-    fixtureId: "t",
-    ...overrides,
-  };
-}
-
-function report(results: CanaryResult[]): CanaryReport {
-  return {
-    schemaVersion: 1,
-    toolVersion: "0.1.0",
-    targetProtocol: 28,
-    project: { name: "p", type: "soroban" },
-    status: "pass",
-    counts: { total: results.length, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 },
-    results,
-    git: { commit: null, branch: null, isDirty: null },
-  };
-}
+import { report, result } from "./helpers";
 
 afterEach(() => {
   errorMock.mockReset();
@@ -46,21 +20,24 @@ afterEach(() => {
 });
 
 describe("emitAnnotations", () => {
-  it("emits an error annotation for a fail result", () => {
+  it("emits an error annotation for a fail result with compatibility failure label", () => {
     emitAnnotations(report([result({ status: "fail", testId: "p28-xdr-1", summary: "decode failed" })]));
     expect(errorMock).toHaveBeenCalledTimes(1);
     expect(errorMock.mock.calls[0]?.[0]).toContain("p28-xdr-1");
+    expect(errorMock.mock.calls[0]?.[0]).toContain("[compatibility failure]");
     expect(errorMock.mock.calls[0]?.[1]).toMatchObject({ title: "Stellar Protocol Canary" });
   });
 
-  it("emits an error annotation for an error result", () => {
+  it("emits an error annotation for an error result with execution error label", () => {
     emitAnnotations(report([result({ status: "error", testId: "p28-rpc-1" })]));
     expect(errorMock).toHaveBeenCalledTimes(1);
+    expect(errorMock.mock.calls[0]?.[0]).toContain("[execution error]");
   });
 
-  it("emits a warning annotation for a warning result", () => {
+  it("emits a warning annotation for a warning result with warning label", () => {
     emitAnnotations(report([result({ status: "warning", testId: "p28-rpc-2" })]));
     expect(warningMock).toHaveBeenCalledTimes(1);
+    expect(warningMock.mock.calls[0]?.[0]).toContain("[warning]");
   });
 
   it("never annotates a pass or skipped result", () => {

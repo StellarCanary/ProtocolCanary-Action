@@ -10,6 +10,14 @@
 - [ ] `npm run typecheck`
 - [ ] `dist/` rebuilt and committed (must match a fresh `npm run build`)
 
+## Changelog
+
+Does this change anything people using the Action will notice? If so, it
+needs an entry in `CHANGELOG.md` under `[Unreleased]`:
+
+- [ ] `CHANGELOG.md` updated under `[Unreleased]` (or this change is
+      internal-only)
+
 ## Related issue
 
 Closes #
