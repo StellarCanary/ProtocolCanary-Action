@@ -75,5 +75,22 @@ export function describeError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
+  // The default stringification of a thrown plain object or array is
+  // "[object Object]", which carries no diagnostic information at all. Such
+  // values do get thrown (some third-party dependencies reject with bare
+  // objects), so prefer a JSON serialization when one is possible and fall
+  // back to the default only when it is not (e.g. circular structures).
+  if (typeof error === "object" && error !== null) {
+    try {
+      // An object whose `toJSON` returns undefined serializes as undefined;
+      // anything else either produces a string or throws.
+      const serialized: string | undefined = JSON.stringify(error);
+      if (serialized !== undefined) {
+        return serialized;
+      }
+    } catch {
+      // Not representable as JSON; fall through to the default below.
+    }
+  }
   return String(error);
 }
