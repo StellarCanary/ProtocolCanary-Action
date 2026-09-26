@@ -1,38 +1,117 @@
-# Pull Request
+# Test coverage and README navigation improvements
 
 ## What changed?
 
-Added end-to-end assertions for the `report` output in `tests/integration/end-to-end.test.ts:135-148,177-190`.
+Four small, independent improvements: two close unit-test coverage gaps in the
+Action's own code, and two make the README navigable and concrete.
 
-- `pass: succeeds, sets outputs, and writes no annotations` now asserts `path.isAbsolute(outputs.report)` and `fs.existsSync(outputs.report)` at `tests/integration/end-to-end.test.ts:146-147`
-- `fail: fails the job and annotates the failing check` now asserts the same at `tests/integration/end-to-end.test.ts:187-188`
+### `tests/unit/runner.test.ts` — `--network` omission test
 
-This verifies the contract documented in `action.yml:111-116` (“Absolute path to the generated JSON report file”) and the `fs.writeFileSync(reportFilePath(), ...)` / `core.setOutput("report", reportPath)` path in `src/main.ts:16-19,97-100,143`.
+Added `buildCheckArgs omits --network specifically when only network is left
+unset` (`tests/unit/runner.test.ts:68-90`). It passes `network: undefined` while
+`rpcUrl` and `config` are set, and asserts:
 
-`path` and `fs` were already imported at `tests/integration/end-to-end.test.ts:1,3`; no new dependencies.
+- `--network` does not appear in the argument array;
+- no empty-string argument was pushed in its place;
+- `--protocol`, `--rpc-url` and `--config` are still forwarded, so the test
+  cannot pass by an implementation that drops all optional flags.
+
+### `tests/unit/summary.test.ts` — `network` rendering tests
+
+Added three tests to the `renderSummaryMarkdown` block
+(`tests/unit/summary.test.ts:94-124`):
+
+- `network: { name: "testnet", observedProtocol: 28 }` renders
+  `Network: testnet — observed protocol 28` (the em-dash suffix);
+- `network: { name: "testnet" }` without `observedProtocol` renders the network
+  line with **no** `observed protocol` text at all;
+- a report with no `network` renders no `Network:` line.
+
+### `README.md` — Table of Contents
+
+Added a `## Contents` list directly after the intro paragraph, before
+`## What it does` (`README.md:13-30`), linking all 15 `##` sections through
+GitHub's auto-generated anchors (including the two-anchor cases
+`#installation--integrity` and `#maintainers--community` for headings
+containing `&`).
+
+### `README.md` — example job summaries
+
+Added a new `### What the job summary looks like` subsection inside "How
+failures appear" (`README.md:144-233`) with three fenced blocks produced by
+the real `renderSummaryMarkdown` / `renderExecutionFailureMarkdown` output:
+
+- a passing run across XDR, RPC and Soroban, including the
+  `Network: testnet — observed protocol 28` line and a collapsed
+  *Skipped fixtures* block;
+- a run with one failing check, one warning and one error, showing the
+  per-surface `❌ FAIL (1/2)` / `⚠️ WARNING (0/1)` rows and the
+  `#### Failures` / `#### Warnings` sections;
+- an execution failure, showing that the summary says Canary could not be
+  executed rather than fabricating a compatibility result.
+
+The section closes by pointing at `tests/unit/summary.test.ts` for the remaining
+rendered fixtures (surface ordering, empty results, no-network).
+
+### `CHANGELOG.md`
+
+Added one bullet under `[Unreleased]` → `### Documentation` describing the
+README changes.
 
 ## Why?
 
-`readOutputs` at `tests/integration/end-to-end.test.ts:101-119` parses every GitHub Actions output as a raw string, but prior tests only checked `outputs.status`/`outputs.passed`/`outputs.failures`. The `report` output is a documented, consumer-facing value (used to upload/inspect the JSON report in a later step). Without checking that it is an absolute path and that the file exists on disk, a regression in `reportFilePath()` (`src/main.ts:16`) or the `fs.writeFileSync` call (`src/main.ts:99`) could go undetected.
+- `buildCheckArgs` guards each optional flag with an independent `if`. The
+  suite asserted that `--protocol` is omitted when unset and that
+  `--network`/`--rpc-url`/`--config` are forwarded together, but nothing
+  pinned the behaviour of `--network` specifically when it alone is unset. A
+  refactor that pushed `--network ""` would have passed the existing tests
+  while sending a malformed argument to the CLI.
+- `CanaryReport.network` is a real, documented field — it is populated
+  whenever a `network`/`rpc-url` is used, as the example workflows do — yet
+  the dedicated branch in `renderSummaryMarkdown` was never exercised, so its
+  formatting (in particular the `— observed protocol N` suffix) could regress
+  silently.
+- The README had grown to fifteen `##` sections with no in-page navigation, so
+  finding the Inputs/Outputs tables meant scrolling or in-browser search.
+- "How failures appear" described the summary's contents in prose only. The
+  summary's actual shape — surface table, ✅/❌/⚠️ icons, Failures/Warnings
+  sections — is far easier to recognise from a real example, both for
+  prospective users and for anyone modifying `renderSummaryMarkdown`.
 
 ## Tests performed
 
-- [x] `npm test -- tests/integration/end-to-end.test.ts` — 1 file / 9 tests passed (pass, pass-no-counts, warning, fail, config-error, rpc-error, fixture-error, internal-error, malformed-json)
+- [x] `npm test -- runner` — 12 tests passed
+- [x] `npm test -- summary` — 11 tests passed
+- [x] `npm test` — 11 files / 109 tests passed
 - [x] `npm run typecheck` — passes
-- [x] `npm run lint` — no new warnings
-- [x] `npm run build` — not required (test-only change, `dist/` unaffected)
+- [x] `npm run lint` — clean
+- [x] `npm run build` — `dist/index.js` is byte-identical to the committed
+      build; no `src/` file changed, so `dist/` is untouched in this PR
 
-Manual check: verified `outputs.report` is e.g. `/tmp/canary-e2e-…/runner-temp/stellar-canary-report.json` and `fs.existsSync` is `true` for the mocked `stellar-canary` runs.
+Manual check: the README examples were generated by rendering the fixtures in
+`tests/unit/summary.test.ts` through `renderSummaryMarkdown` and pasted
+verbatim, so they match the current output byte for byte.
+
+## Changelog
+
+- [x] `CHANGELOG.md` updated under `[Unreleased]`
 
 ## Related issue
 
-Closes: Add an integration test assertion that the report output is a valid, existing absolute path
+Closes #43
+Closes #44
+Closes #46
+Closes #47
 
-Component: `tests/integration/end-to-end.test.ts`
+Components: `tests/unit/runner.test.ts`, `tests/unit/summary.test.ts`,
+`README.md` (the behaviour under test lives in `src/runner.ts:24-42` and
+`src/summary.ts:203-247`, neither of which is modified).
 
 ## Compatibility impact
 
-None. Test-only change. No input/output contract change; validates existing `report` output documented at `action.yml:111`.
+None. Two of the four changes are test-only; the other two are documentation
+only. No input, output, summary format, or supported `Protocol-Canary` version
+range changes, and `dist/` is unchanged.
 
 ## Breaking change?
 
