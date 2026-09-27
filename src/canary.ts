@@ -263,6 +263,28 @@ async function restoreFromCache(resolved: ResolvedVersion): Promise<InstalledCan
   }
 }
 
+/**
+ * Saves a freshly built `stellar-canary` binary to the Actions cache so a
+ * later run pinned to the same commit (or tag) can skip `cargo install`.
+ *
+ * The cache key comes from {@link cacheKeyFor}, which embeds the platform,
+ * architecture and immutable pin. This is strictly a performance
+ * optimization and is deliberately silent about failure: every error —
+ * including `@actions/cache` throwing when a save conflicts with an existing
+ * entry — is swallowed after a `core.debug` log, so a cache outage never
+ * turns a successful install into a failed run. Restored binaries are still
+ * re-verified by {@link verifyInstalledBinary} in
+ * {@link restoreFromCache}'s caller, so a bad cache entry cannot be trusted.
+ *
+ * No-ops when {@link cache.isFeatureAvailable} reports the cache service is
+ * not reachable from this workflow (for example a fork PR without a
+ * `GITHUB_TOKEN` with cache access).
+ *
+ * @param resolved - The version pin the binary was installed for; used to
+ * derive the cache key.
+ * @param binaryPath - Absolute path to the verified `stellar-canary` binary
+ * to store.
+ */
 async function saveToCache(resolved: ResolvedVersion, binaryPath: string): Promise<void> {
   if (!cache.isFeatureAvailable()) {
     return;

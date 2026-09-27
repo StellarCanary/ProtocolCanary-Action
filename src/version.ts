@@ -56,7 +56,11 @@ export interface ResolveVersionOptions {
 
 /** Resolves a bare version (e.g. "0.1.0") to its upstream tag and, if
  * possible, the immutable commit it currently points to. Never throws:
- * network/API failures degrade to `commitSha: undefined`. */
+ * every tag-lookup failure — non-200 responses, malformed JSON, valid JSON
+ * of an unexpected shape, or a missing tag — degrades to
+ * `commitSha: undefined` and only surfaces as a debug log, falling back to
+ * tag pinning. Installation failures proper are reported separately, as
+ * `InstallationFailedError` thrown from `src/canary.ts`. */
 export async function resolveVersion(
   version: string,
   options: ResolveVersionOptions = {},
