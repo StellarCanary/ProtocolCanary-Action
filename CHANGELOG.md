@@ -22,6 +22,10 @@ All notable changes to this project are documented in this file.
   "How failures appear" now shows the actual rendered job summary for a
   passing run, a run with failures/warnings, and an execution failure,
   instead of describing the format only in prose.
+- `action.yml`'s `upload-report` description now states its default value
+  (`true`, matching the input's `default` key) and that setting it to
+  `false` skips the artifact upload, so the documented contract spells out
+  the default instead of leaving it to the `default` key alone.
 
 ### Added
 
@@ -46,6 +50,11 @@ All notable changes to this project are documented in this file.
   commit SHAs (with the human-readable version kept as a trailing comment)
   instead of mutable version tags, closing a supply-chain hole — most
   importantly in `release.yml`, which runs with `contents: write`.
+- A `config` input that names a directory is now rejected during input
+  validation with an `InvalidInput` error instead of being accepted and
+  forwarded to the `stellar-canary` CLI, which failed later with a generic,
+  less actionable error. `parseConfig` now requires the resolved path to be
+  a regular file (`fs.statSync(...).isFile()`) rather than merely existing.
 
 ### Testing
 
