@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ConfigNotFoundError,
   TimeoutError,
+  CanaryExecutionFailedError,
   InvalidReportError,
   InvalidInputError,
   describeError,
@@ -22,6 +23,10 @@ describe("CanaryActionError hierarchy", () => {
 
   it("sets the TimeoutError code", () => {
     expect(new TimeoutError("boom").code).toBe("Timeout");
+  });
+
+  it("sets the CanaryExecutionFailedError code", () => {
+    expect(new CanaryExecutionFailedError("boom").code).toBe("CanaryExecutionFailed");
   });
 
   it("sets the InvalidReportError code", () => {
