@@ -79,7 +79,8 @@ inputs:
   annotations:
     description: >-
       Convert compatibility failures, warnings, and execution errors into
-      GitHub Actions annotations.
+      GitHub Actions annotations. Defaults to `true`; set it to `false` to
+      report through the job summary, outputs, and JSON artifact only.
     required: false
     default: "true"
 
