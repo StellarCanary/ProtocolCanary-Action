@@ -191,4 +191,20 @@ describe("resolveVersion", () => {
     await expect(resolveVersion("0.1.0")).resolves.toMatchObject({ commitSha: undefined });
     expect(calls).toHaveLength(50);
   });
+
+  it.each([
+    ["a missing commit object", [{ name: "v0.1.0" }]],
+    ["an empty commit.sha", [{ name: "v0.1.0", commit: { sha: "" } }]],
+    ["a non-string commit.sha", [{ name: "v0.1.0", commit: { sha: 123 } }]],
+  ])("degrades to commitSha undefined when the matched tag has %s, never throwing", async (_shape, tags) => {
+    // Distinct from "tag not found": the tag *is* present, but the entry has
+    // an unexpected GitHub API shape. resolveTagCommit rejects, yet
+    // resolveVersion's "never throws" contract still requires it to resolve
+    // with commitSha undefined and fall back to tag pinning.
+    // Uses the paginating mockHttpsPages helper so a matching tag on the first
+    // page needs no Link header, mirroring the not-found cases above.
+    mockHttpsPages([{ body: JSON.stringify(tags) }]);
+    const resolved = await resolveVersion("0.1.0");
+    expect(resolved).toEqual({ version: "0.1.0", tag: "v0.1.0", commitSha: undefined });
+  });
 });
