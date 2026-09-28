@@ -119,6 +119,13 @@ describe("fallbackArtifactName", () => {
   it("generates unique names when no differentiator is available", () => {
     expect(fallbackArtifactName()).not.toBe(fallbackArtifactName());
   });
+
+  it("falls back to a unique name when the differentiator sanitizes away", () => {
+    const name = fallbackArtifactName("!!!");
+
+    expect(name).toMatch(new RegExp(`^${ARTIFACT_NAME}-[a-z0-9]+-[a-z0-9]+$`));
+    expect(name).not.toBe(`${ARTIFACT_NAME}-`);
+  });
 });
 
 describe("isArtifactNameCollision", () => {
