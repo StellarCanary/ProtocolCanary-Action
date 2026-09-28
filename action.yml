@@ -23,10 +23,13 @@ inputs:
       Path to a `.stellar-canary.toml` configuration file, relative to the
       workflow's working directory. If omitted, the CLI looks for
       `.stellar-canary.toml` in the project root. If a path is given and
-      the file does not exist, the Action fails before invoking Canary. A
-      relative path is resolved to an absolute path against that working
-      directory before being forwarded, so the file that is validated and
-      the file the CLI reads are always the same.
+      the file does not exist, the Action fails before invoking Canary;
+      a path that exists but is not a regular file (for example a
+      directory) is rejected the same way, rather than being forwarded to
+      the CLI to fail later with a less actionable error. A relative path
+      is resolved to an absolute path against that working directory
+      before being forwarded, so the file that is validated and the file
+      the CLI reads are always the same.
     required: false
 
   network:
@@ -66,20 +69,22 @@ inputs:
   upload-report:
     description: >-
       Upload the machine-readable JSON report as a workflow artifact
-      named `stellar-protocol-canary-report`. When the same workflow run
-      invokes this Action more than once (for example a matrix over
-      networks or protocol versions), the first invocation keeps that
-      stable name and later invocations automatically retry under a
-      name suffixed with the inputs that distinguish them. Artifact
-      upload is auxiliary: a failure to upload never changes the
-      underlying compatibility result.
+      named `stellar-protocol-canary-report`. Defaults to `true`; set to
+      `false` to skip the artifact upload entirely. When the same
+      workflow run invokes this Action more than once (for example a
+      matrix over networks or protocol versions), the first invocation
+      keeps that stable name and later invocations automatically retry
+      under a name suffixed with the inputs that distinguish them.
+      Artifact upload is auxiliary: a failure to upload never changes
+      the underlying compatibility result.
     required: false
     default: "true"
 
   annotations:
     description: >-
       Convert compatibility failures, warnings, and execution errors into
-      GitHub Actions annotations.
+      GitHub Actions annotations. Defaults to `true`; set it to `false` to
+      report through the job summary, outputs, and JSON artifact only.
     required: false
     default: "true"
 
