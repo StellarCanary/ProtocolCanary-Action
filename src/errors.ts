@@ -1,88 +1,13 @@
-/**
- * Typed internal errors. Each one maps to a distinct, user-facing failure
- * category so that a compatibility failure (Canary ran and found a real
- * problem) is never confused with the Action failing to run Canary at all.
- */
-
-export abstract class CanaryActionError extends Error {
-  abstract readonly code: string;
-
-  constructor(message: string) {
+export class CanaryActionError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly message: string,
+    public readonly details?: unknown,
+  ) {
     super(message);
-    this.name = new.target.name;
+    this.name = this.constructor.name;
   }
 }
 
-/** An Action input failed validation before Canary was ever invoked. */
-export class InvalidInputError extends CanaryActionError {
-  readonly code = "InvalidInput";
-}
-
-/** A `config` input was given but the file does not exist. */
-export class ConfigNotFoundError extends CanaryActionError {
-  readonly code = "ConfigNotFound";
-
-  constructor(readonly path: string) {
-    super(`Configuration file not found: ${path}`);
-  }
-}
-
-/** No usable `stellar-canary` binary could be found or installed. */
-export class CanaryNotFoundError extends CanaryActionError {
-  readonly code = "CanaryNotFound";
-}
-
-/** Installing the requested Canary version failed. */
-export class InstallationFailedError extends CanaryActionError {
-  readonly code = "InstallationFailed";
-}
-
-/** The Canary process could not be started or was killed abnormally. */
-export class CanaryExecutionFailedError extends CanaryActionError {
-  readonly code = "CanaryExecutionFailed";
-}
-
-/** The Canary process exceeded its allotted execution time. */
-export class TimeoutError extends CanaryActionError {
-  readonly code = "Timeout";
-}
-
-/** Canary's stdout could not be parsed as a report matching the documented schema. */
-export class InvalidReportError extends CanaryActionError {
-  readonly code = "InvalidReport";
-}
-
-/** Uploading the JSON report as a workflow artifact failed. */
-export class ArtifactUploadFailedError extends CanaryActionError {
-  readonly code = "ArtifactUploadFailed";
-}
-
-/** Publishing the GitHub job summary failed. */
-export class SummaryPublishFailedError extends CanaryActionError {
-  readonly code = "SummaryPublishFailed";
-}
-
-/**
- * Narrows an unknown thrown value to a {@link CanaryActionError}. `main.ts`
- * uses this to distinguish an error this Action raised deliberately (which
- * carries a typed `code` and a safe, user-facing message) from any other
- * value that merely happened to be thrown, which must instead be routed
- * through `describeError`. Reuse this guard rather than re-checking
- * `instanceof CanaryActionError` inline, so the public error-handling
- * contract stays defined in one place.
- */
-export function isCanaryActionError(error: unknown): error is CanaryActionError {
-  return error instanceof CanaryActionError;
-}
-
-/**
- * Formats an unknown thrown value into a safe, single-line message.
- * Never includes a stack trace: stack traces are only surfaced via
- * `core.debug`, gated on `ACTIONS_STEP_DEBUG`, by the caller.
- */
-export function describeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
+// Removed ArtifactUploadFailedError - upload failures are handled via return values
+// in uploadReport() rather than exceptions.
