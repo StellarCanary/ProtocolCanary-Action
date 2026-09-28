@@ -1,117 +1,122 @@
-# Test coverage and README navigation improvements
+# Unit-test coverage for `canary.ts` install-path helpers, `notablyList` status filtering, and `resolveVersion` SHA parsing
 
 ## What changed?
 
-Four small, independent improvements: two close unit-test coverage gaps in the
-Action's own code, and two make the README navigable and concrete.
+Nine new unit tests across three test files. No `src/` file is modified, so
+`dist/` is unchanged.
 
-### `tests/unit/runner.test.ts` — `--network` omission test
+### `tests/unit/canary.test.ts` — private helpers `cargoBinDir` (#220) and `binaryName` (#224)
 
-Added `buildCheckArgs omits --network specifically when only network is left
-unset` (`tests/unit/runner.test.ts:68-90`). It passes `network: undefined` while
-`rpcUrl` and `config` are set, and asserts:
+Both helpers are private and zero-argument, so they are pinned through the
+only externally observable surface they influence: the candidate binary path
+`ensureCanaryInstalled` derives and hands to the Actions cache
+(`restoreCache`/`saveCache`). To make the `~/.cargo` fallback observable,
+`node:os` is now partially mocked (spreading the real module, overriding only
+`homedir`, per the repo's partial-mock convention) to serve a sentinel home
+directory; every other test still sees a deterministic, machine-independent
+`homedir()`, and the existing suite is unaffected.
 
-- `--network` does not appear in the argument array;
-- no empty-string argument was pushed in its place;
-- `--protocol`, `--rpc-url` and `--config` are still forwarded, so the test
-  cannot pass by an implementation that drops all optional flags.
+- **`cargoBinDir` (#220)** — two tests, one per branch:
+  - with `CARGO_HOME` set, every binary path passed to
+    `restoreCacheMock`/`saveCacheMock` is anchored under
+    `<CARGO_HOME>/bin/`, and `os.homedir` is never consulted;
+  - with `CARGO_HOME` unset, the path falls back to
+    `~/.cargo/bin/` (asserted against the sentinel home).
+- **`binaryName` (#224)** — two tests, one per branch:
+  - with `process.platform` overridden to `win32`, the cached path ends in
+    `stellar-canary.exe`;
+  - with the platform overridden to `linux`, `darwin`, `freebsd`, and
+    `openbsd` in turn, the path ends in `stellar-canary` (no `.exe`), so both
+    branches are covered regardless of the OS the suite runs on. Platform
+    overrides use a small `withPlatform` helper that redefines
+    `process.platform` (a non-writable but configurable data property on
+    Node 20+, where `vi.spyOn(process, "platform", "get")` throws) and
+    restores the original descriptor in `finally`, awaiting the async body so
+    the override spans the whole awaited call.
 
-### `tests/unit/summary.test.ts` — `network` rendering tests
+### `tests/unit/summary.test.ts` — `notablyList` status filtering (#188)
 
-Added three tests to the `renderSummaryMarkdown` block
-(`tests/unit/summary.test.ts:94-124`):
+`notablyList(report, statuses)` filters results to the requested statuses;
+it is private, so the tests pin its behavior through the two sections it
+drives in `renderSummaryMarkdown` — Failures (`["fail", "error"]`) and
+Warnings (`["warning"]`). Four tests:
 
-- `network: { name: "testnet", observedProtocol: 28 }` renders
-  `Network: testnet — observed protocol 28` (the em-dash suffix);
-- `network: { name: "testnet" }` without `observedProtocol` renders the network
-  line with **no** `observed protocol` text at all;
-- a report with no `network` renders no `Network:` line.
+- a report containing `pass`, `warning`, `fail`, and `error` results renders
+  exactly the `fail`/`error` entries under `#### Failures`, and neither the
+  passing nor the warning entry leaks in;
+- a warning entry appears under `#### Warnings` and not under Failures, and
+  conversely the failure appears under Failures and not under Warnings;
+- with no `warning`-status result, the `#### Warnings` section is omitted
+  entirely;
+- with only `pass`/`warning` results, the `#### Failures` section is omitted
+  entirely.
 
-### `README.md` — Table of Contents
+### `tests/unit/version.test.ts` — `resolveVersion` parses a valid commit SHA (#192)
 
-Added a `## Contents` list directly after the intro paragraph, before
-`## What it does` (`README.md:13-30`), linking all 15 `##` sections through
-GitHub's auto-generated anchors (including the two-anchor cases
-`#installation--integrity` and `#maintainers--community` for headings
-containing `&`).
-
-### `README.md` — example job summaries
-
-Added a new `### What the job summary looks like` subsection inside "How
-failures appear" (`README.md:144-233`) with three fenced blocks produced by
-the real `renderSummaryMarkdown` / `renderExecutionFailureMarkdown` output:
-
-- a passing run across XDR, RPC and Soroban, including the
-  `Network: testnet — observed protocol 28` line and a collapsed
-  *Skipped fixtures* block;
-- a run with one failing check, one warning and one error, showing the
-  per-surface `❌ FAIL (1/2)` / `⚠️ WARNING (0/1)` rows and the
-  `#### Failures` / `#### Warnings` sections;
-- an execution failure, showing that the summary says Canary could not be
-  executed rather than fabricating a compatibility result.
-
-The section closes by pointing at `tests/unit/summary.test.ts` for the remaining
-rendered fixtures (surface ordering, empty results, no-network).
+One test serves a GitHub-shaped tags payload (three tags in realistic
+newest-first order, full-length 40-hex SHAs) and asserts that
+`resolveVersion("0.1.0")` returns exactly `{ version, tag, commitSha }` with
+the SHA of the *matching* entry — not the first one — preserved byte for byte,
+matching `/^[0-9a-f]{40}$/`, fetched from a single (non-paginated) request.
 
 ### `CHANGELOG.md`
 
-Added one bullet under `[Unreleased]` → `### Documentation` describing the
-README changes.
+One new `### Testing` bullet under `[Unreleased]` describing the added
+coverage. No user-facing behavior changes, so no other section is touched.
 
 ## Why?
 
-- `buildCheckArgs` guards each optional flag with an independent `if`. The
-  suite asserted that `--protocol` is omitted when unset and that
-  `--network`/`--rpc-url`/`--config` are forwarded together, but nothing
-  pinned the behaviour of `--network` specifically when it alone is unset. A
-  refactor that pushed `--network ""` would have passed the existing tests
-  while sending a malformed argument to the CLI.
-- `CanaryReport.network` is a real, documented field — it is populated
-  whenever a `network`/`rpc-url` is used, as the example workflows do — yet
-  the dedicated branch in `renderSummaryMarkdown` was never exercised, so its
-  formatting (in particular the `— observed protocol N` suffix) could regress
-  silently.
-- The README had grown to fifteen `##` sections with no in-page navigation, so
-  finding the Inputs/Outputs tables meant scrolling or in-browser search.
-- "How failures appear" described the summary's contents in prose only. The
-  summary's actual shape — surface table, ✅/❌/⚠️ icons, Failures/Warnings
-  sections — is far easier to recognise from a real example, both for
-  prospective users and for anyone modifying `renderSummaryMarkdown`.
+- `cargoBinDir` decides where the Action looks for and installs the
+  `stellar-canary` binary. A regression — dropping `CARGO_HOME`, or joining
+  the wrong path segment — would silently break existing-binary discovery and
+  cache restore/save while every test kept passing (#220).
+- `binaryName` picks the executable name, and the `.exe` suffix only applies
+  on `win32` — a distinction invisible on the Linux runners the suite
+  typically executes on. Picking the wrong name breaks binary discovery and
+  cache lookup on Windows runners specifically (#224).
+- `notablyList`'s status filter decides which section an entry is rendered
+  in. A regression that let any status through would duplicate entries into
+  the wrong section, or fabricate a Failures/Warnings heading for a report
+  that has none (#188).
+- `resolveVersion`'s tag→SHA parse is the value that `cargo install --rev`
+  pins, i.e. this Action's whole integrity mechanism (see `SECURITY.md`).
+  The suite covered every degradation path (missing tag, bad JSON, bad
+  shape, pagination) but never pinned the *successful* parse with realistic
+  full-length SHAs and multiple tags (#192).
 
 ## Tests performed
 
-- [x] `npm test -- runner` — 12 tests passed
-- [x] `npm test -- summary` — 11 tests passed
-- [x] `npm test` — 11 files / 109 tests passed
-- [x] `npm run typecheck` — passes
+- [x] `npm test` — 11 files / 147 tests passed (138 existing + 9 new)
 - [x] `npm run lint` — clean
-- [x] `npm run build` — `dist/index.js` is byte-identical to the committed
-      build; no `src/` file changed, so `dist/` is untouched in this PR
-
-Manual check: the README examples were generated by rendering the fixtures in
-`tests/unit/summary.test.ts` through `renderSummaryMarkdown` and pasted
-verbatim, so they match the current output byte for byte.
+- [x] `npm run typecheck` — passes
+- [x] `npm run build` — passes; `dist/` unchanged (no `src/` file modified),
+      so the committed bundle still matches a fresh build
+- [x] New tests run on Linux with platform overrides, so the `win32` and
+      non-win32 branches of `binaryName` are both exercised regardless of
+      the runner OS
 
 ## Changelog
 
-- [x] `CHANGELOG.md` updated under `[Unreleased]`
+- [x] `CHANGELOG.md` updated under `[Unreleased]` → `### Testing`
 
 ## Related issue
 
-Closes #43
-Closes #44
-Closes #46
-Closes #47
+Closes #188
+Closes #192
+Closes #220
+Closes #224
 
-Components: `tests/unit/runner.test.ts`, `tests/unit/summary.test.ts`,
-`README.md` (the behaviour under test lives in `src/runner.ts:24-42` and
-`src/summary.ts:203-247`, neither of which is modified).
+Components: `tests/unit/canary.test.ts`, `tests/unit/summary.test.ts`,
+`tests/unit/version.test.ts`, `CHANGELOG.md`. The behavior under test lives
+in `src/canary.ts` (`cargoBinDir`, `binaryName`), `src/summary.ts`
+(`notablyList`), and `src/version.ts` (`resolveVersion`) — none of which is
+modified.
 
 ## Compatibility impact
 
-None. Two of the four changes are test-only; the other two are documentation
-only. No input, output, summary format, or supported `Protocol-Canary` version
-range changes, and `dist/` is unchanged.
+None. Test-only changes plus one testing entry in the changelog: no input,
+output, summary format, or supported `Protocol-Canary` version range
+changes, and `dist/` is unchanged.
 
 ## Breaking change?
 
