@@ -67,19 +67,36 @@ function parseProtocol(raw: string): number | undefined {
   return Number.parseInt(value, 10);
 }
 
-/** Validates the "config" input as a path to an existing file, resolved
- * against the current working directory; undefined when unset. Throws
- * {@link ConfigNotFoundError} when the path does not exist. */
+/** Validates the "config" input as a path to an existing regular file,
+ * resolved against the current working directory; undefined when unset.
+ * Throws {@link ConfigNotFoundError} (naming the path as written) when the
+ * path does not exist, and {@link InvalidInputError} when it exists but is
+ * not a file (e.g. a directory).
+ *
+ * Returns the *resolved* path rather than the raw input. The existence check
+ * above already runs against `path.resolve(value)`, so returning the
+ * unresolved string would leave the path that was validated and the path
+ * forwarded to the CLI as `--config` dependent on the two sharing a working
+ * directory. Returning `resolved` keeps them the same path by construction. */
 function parseConfig(raw: string): string | undefined {
   const value = optional(raw);
   if (value === undefined) {
     return undefined;
   }
   const resolved = path.resolve(value);
-  if (!fs.existsSync(resolved)) {
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(resolved);
+  } catch {
     throw new ConfigNotFoundError(value);
   }
-  return value;
+  if (!stats.isFile()) {
+    throw new InvalidInputError(
+      `Invalid "config" input: ${JSON.stringify(value)}. Expected a path to a configuration ` +
+        "file, but the path is a directory.",
+    );
+  }
+  return resolved;
 }
 
 /** Validates the "rpc-url" input as a parseable URL and enforces the scheme

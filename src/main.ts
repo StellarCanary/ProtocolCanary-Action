@@ -7,7 +7,7 @@ import { uploadReport } from "./artifact";
 import { emitAnnotations, emitExecutionFailureAnnotation } from "./annotations";
 import { ensureCanaryInstalled } from "./canary";
 import { describeError, isCanaryActionError } from "./errors";
-import { getInputs } from "./inputs";
+import { ActionInputs, getInputs } from "./inputs";
 import { describeExitCode, parseReport } from "./output";
 import { buildCheckArgs, runCheck } from "./runner";
 import { renderExecutionFailureMarkdown, renderSummaryMarkdown, writeSummary } from "./summary";
@@ -16,6 +16,27 @@ import { resolveVersion } from "./version";
 function reportFilePath(): string {
   const dir = process.env.RUNNER_TEMP ?? os.tmpdir();
   return path.join(dir, "stellar-canary-report.json");
+}
+
+/**
+ * A stable, human-readable suffix describing what this invocation checked,
+ * used only when the default artifact name is already taken in the same
+ * workflow run (a matrix leg or a second Action step). Returns `undefined`
+ * when no inputs distinguish this invocation, in which case the upload
+ * falls back to a short unique suffix instead.
+ */
+function artifactDifferentiator(inputs: ActionInputs): string | undefined {
+  const parts: string[] = [];
+  if (inputs.protocol !== undefined) {
+    parts.push(`protocol-${String(inputs.protocol)}`);
+  }
+  if (inputs.network !== undefined) {
+    parts.push(`network-${inputs.network}`);
+  }
+  if (inputs.config !== undefined) {
+    parts.push(`config-${path.basename(inputs.config)}`);
+  }
+  return parts.length > 0 ? parts.join("-") : undefined;
 }
 
 /** Handles every case where Canary did not produce a usable report at all
@@ -38,6 +59,23 @@ async function handleExecutionFailure(reason: string, diagnostic: string, annota
   core.setOutput("errors", "0");
 }
 
+/**
+ * Orchestrates one Action run, in order: read and validate inputs, resolve
+ * the requested version to a pinned commit, ensure a matching binary is
+ * installed, execute the compatibility check, parse stdout into a report,
+ * emit annotations, write the job summary, set the Action outputs, and
+ * optionally upload the report artifact.
+ *
+ * Returns early — never throwing past the Action boundary — when Canary
+ * could not be run at all: invalid inputs are reported directly via
+ * `core.setFailed`, while an install failure, an abnormal process exit (or
+ * timeout), or an unparseable report go through `handleExecutionFailure`.
+ * These are deliberately distinct from a real compatibility failure, where
+ * Canary ran and produced a usable report.
+ *
+ * Canary's own exit code, not the parsed report, is authoritative for
+ * pass/fail (see the final check at the bottom of the function).
+ */
 export async function run(): Promise<void> {
   let inputs;
   try {
@@ -122,7 +160,7 @@ export async function run(): Promise<void> {
   core.setOutput("report", reportPath);
 
   if (inputs.uploadReport) {
-    await uploadReport(reportPath);
+    await uploadReport(reportPath, artifactDifferentiator(inputs));
   }
 
   // Canary's own exit code is authoritative: never recompute pass/fail
