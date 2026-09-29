@@ -83,6 +83,10 @@ All notable changes to this project are documented in this file.
   of the standard `sha256sum` format: `#` comment lines and `*`-prefixed
   binary-mode entries are parsed and enforced during checksum
   verification ([#275]).
+- Added unit coverage for the platform-only fallback in checksum selection:
+  when a published manifest names a `stellar-canary` binary for the runner's
+  platform without distinguishing architecture, that entry's checksum is the
+  one selected and enforced during verification ([#274]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
