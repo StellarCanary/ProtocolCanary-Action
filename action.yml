@@ -1,8 +1,8 @@
 name: Stellar Protocol Canary
 description: >-
   Run Stellar protocol compatibility checks (XDR, RPC, Soroban) against the
-  real Protocol-Canary CLI and report the result as a GitHub job summary,
-  annotations, and a downloadable JSON artifact.
+  real Protocol-Canary CLI and report the result as a GitHub job summary, annotations,
+  and a downloadable JSON artifact.
 author: StellarCanary
 
 branding:
@@ -62,7 +62,7 @@ inputs:
       Protocol Canary version to install and run, without a leading `v`
       (for example `0.1.1`). This must match a real release tag on
       `StellarCanary/Protocol-Canary`. Reproducibility matters: this
-      Action never tracks `main` or an unpinned "latest" build.
+      Action never tracks `main` or an unpinned \"latest\" build.
     required: false
     default: 0.1.1
 
@@ -94,35 +94,5 @@ inputs:
       and the Action fails with a timeout error. This bounds only the
       `stellar-canary check` process, not `cargo install` or the rest of
       the job. It is unrelated to GitHub Actions' own job/step-level
-      `timeout-minutes`, which the platform enforces over the whole job:
-      set any surrounding job- or step-level `timeout-minutes`
-      comfortably higher than this value, otherwise GitHub's own timeout
-      can terminate the step first with a generic error and no Canary
-      summary, annotations, or timeout diagnostic.
+      `timeout-minutes`, which the platform enforces o
     required: false
-    default: "15"
-
-outputs:
-  status:
-    description: >-
-      Overall result reported by Canary: `pass`, `warning`, `fail`,
-      `error`, or `execution-failed` (set by the Action itself when
-      Canary could not produce a report at all).
-  passed:
-    description: Number of checks that passed.
-  warnings:
-    description: Number of checks that produced a warning.
-  failures:
-    description: Number of checks that failed a compatibility assertion.
-  errors:
-    description: Number of checks that could not complete due to an execution error.
-  report:
-    description: >-
-      Absolute path to the generated JSON report file. Only set when Canary
-      produced output to parse; empty/unset on an execution failure (when
-      status is `execution-failed`), unlike `passed`/`warnings`/`failures`/`errors`,
-      which are explicitly set to `0` in that case.
-
-runs:
-  using: node24
-  main: dist/index.js
