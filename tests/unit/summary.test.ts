@@ -146,6 +146,72 @@ describe("renderSummaryMarkdown", () => {
     expect(markdown).not.toContain("| Soroban |");
     expect(markdown).toContain("0/0 applicable checks passed.");
   });
+
+  // notablyList(report, ["fail", "error"]) drives the Failures section and
+  // notablyList(report, ["warning"]) the Warnings section; these tests pin
+  // the status filter between them. A regression that let any status through
+  // would either duplicate an entry into the wrong section or invent a
+  // Failures/Warnings heading for a report that has none.
+  it("lists every non-passing status under Failures and nothing else (#188)", () => {
+    const markdown = renderSummaryMarkdown(
+      report([
+        result({ testId: "xdr-pass", surface: "xdr", status: "pass", summary: "ok", fixtureId: "xdr-pass" }),
+        result({ testId: "rpc-warn", surface: "rpc", status: "warning", summary: "slow reply", fixtureId: "rpc-warn" }),
+        result({ testId: "xdr-fail", surface: "xdr", status: "fail", summary: "mismatch", fixtureId: "xdr-fail" }),
+        result({ testId: "rpc-error", surface: "rpc", status: "error", summary: "connection refused", fixtureId: "rpc-error" }),
+      ]),
+    );
+
+    const failures = markdown.slice(markdown.indexOf("#### Failures"), markdown.indexOf("#### Warnings"));
+    expect(markdown).toContain("#### Failures");
+    expect(failures).toContain("`xdr-fail` (xdr) — mismatch");
+    expect(failures).toContain("`rpc-error` (rpc) — connection refused");
+    // The filter is exact: passing and warning results stay out of Failures.
+    expect(failures).not.toContain("xdr-pass");
+    expect(failures).not.toContain("rpc-warn");
+  });
+
+  it("lists warnings under Warnings and keeps them out of Failures (#188)", () => {
+    const markdown = renderSummaryMarkdown(
+      report([
+        result({ testId: "xdr-warn", surface: "xdr", status: "warning", summary: "deprecated field", fixtureId: "xdr-warn" }),
+        result({ testId: "xdr-fail", surface: "xdr", status: "fail", summary: "mismatch", fixtureId: "xdr-fail" }),
+      ]),
+    );
+
+    const warnings = markdown.slice(markdown.indexOf("#### Warnings"));
+    expect(markdown).toContain("#### Warnings");
+    expect(warnings).toContain("`xdr-warn` (xdr) — deprecated field");
+    expect(warnings).not.toContain("xdr-fail");
+    // Conversely the failure must not leak into Warnings either.
+    const failures = markdown.slice(markdown.indexOf("#### Failures"), markdown.indexOf("#### Warnings"));
+    expect(failures).toContain("xdr-fail");
+    expect(failures).not.toContain("xdr-warn");
+  });
+
+  it("omits the Warnings section when no warning-status result exists (#188)", () => {
+    const markdown = renderSummaryMarkdown(
+      report([
+        result({ testId: "a", surface: "xdr", status: "pass", summary: "ok", fixtureId: "a" }),
+        result({ testId: "b", surface: "rpc", status: "fail", summary: "mismatch", fixtureId: "b" }),
+      ]),
+    );
+
+    expect(markdown).toContain("#### Failures");
+    expect(markdown).not.toContain("#### Warnings");
+  });
+
+  it("omits the Failures section when only pass and warning results exist (#188)", () => {
+    const markdown = renderSummaryMarkdown(
+      report([
+        result({ testId: "a", surface: "xdr", status: "pass", summary: "ok", fixtureId: "a" }),
+        result({ testId: "b", surface: "rpc", status: "warning", summary: "slow reply", fixtureId: "b" }),
+      ]),
+    );
+
+    expect(markdown).toContain("#### Warnings");
+    expect(markdown).not.toContain("#### Failures");
+  });
 });
 
 describe("renderExecutionFailureMarkdown", () => {

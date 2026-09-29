@@ -95,6 +95,35 @@ afterEach(() => {
 });
 
 describe("resolveVersion", () => {
+  // #192: successful parse of a valid commit SHA from the GitHub tags API.
+  // Uses GitHub-shaped payloads — multiple tags in a realistic order and
+  // full-length 40-hex SHAs — so the test pins that the sha is taken from
+  // the *matching* entry (not the first one) and preserved byte for byte,
+  // with no truncation or normalization.
+  it("parses the full commit sha of the matching tag from the GitHub tags API (#192)", async () => {
+    const linuxSha = "3f2a9c8d7e6b5a4938271605f4e3d2c1b0a99887";
+    const targetSha = "c1a7f00d5e8b9273645f0e1d2c3b4a5968778695";
+    const v2Sha = "0f1e2d3c4b5a69788796a5b4c3d2e1f00918a7b6";
+    mockHttpsPages([
+      {
+        body: JSON.stringify([
+          { name: "v0.2.0", commit: { sha: linuxSha } },
+          { name: "v0.1.0", commit: { sha: targetSha } },
+          { name: "v0.0.1", commit: { sha: v2Sha } },
+        ]),
+      },
+    ]);
+
+    const resolved = await resolveVersion("0.1.0");
+
+    expect(resolved).toEqual({ version: "0.1.0", tag: "v0.1.0", commitSha: targetSha });
+    expect(resolved.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(resolved.commitSha).not.toBe(linuxSha);
+    expect(resolved.commitSha).not.toBe(v2Sha);
+    // One page fetched, no pagination needed for a first-page match.
+    expect(vi.mocked(https.get)).toHaveBeenCalledTimes(1);
+  });
+
   it("resolves a matching tag to its commit sha", async () => {
     const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
     const resolved = await resolveVersion("0.1.0");

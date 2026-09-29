@@ -61,6 +61,20 @@ All notable changes to this project are documented in this file.
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
+- Added unit coverage for the private install-path helpers in `canary.ts`:
+  `cargoBinDir` now has tests pinning both the `CARGO_HOME`-anchored path and
+  the `~/.cargo/bin` fallback (observed through the Actions cache paths), and
+  `binaryName` has tests pinning `stellar-canary.exe` on `win32` and
+  `stellar-canary` elsewhere, with `process.platform` overridden so both
+  branches run on any runner OS ([#220], [#224]).
+- Added unit coverage that `renderSummaryMarkdown`'s Failures/Warnings
+  sections (driven by `notablyList`'s status filter) list only results with
+  a requested status: fail and error under Failures, warning under Warnings,
+  and no section rendered when no result matches ([#188]).
+- Added a `resolveVersion` test pinning the successful parse of a full
+  40-character commit SHA for the matching tag from the GitHub tags API,
+  including that the SHA comes from the matching entry rather than the first
+  one ([#192]).
 
 ## [0.1.1]
 

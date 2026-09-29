@@ -23,6 +23,11 @@ const { execMock } = vi.hoisted(() => ({ execMock: vi.fn() }));
 // stubbed too: no test in this file may hit the network.
 const httpsGetMock = vi.hoisted(() => vi.fn());
 
+// `node:os` is mocked (spreading the real module, overriding only `homedir`)
+// so the `cargoBinDir` home-directory fallback can be observed against a
+// sentinel instead of the runner's real home, which varies by machine.
+const osMocks = vi.hoisted(() => ({ homedirMock: vi.fn() }));
+
 // `@actions/cache`, `@actions/exec`, and `@actions/core` are all mocked so
 // every test in this file is offline and deterministic: no GitHub cache
 // service, no Rust toolchain, and no real `stellar-canary` binary is ever
@@ -47,6 +52,11 @@ vi.mock("node:https", () => ({
   get: httpsGetMock,
 }));
 
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return { ...actual, homedir: osMocks.homedirMock };
+});
+
 import { ensureCanaryInstalled } from "../../src/canary";
 import { CanaryNotFoundError, InstallationFailedError } from "../../src/errors";
 import { CANARY_REPO_URL, ResolvedVersion } from "../../src/version";
@@ -64,6 +74,37 @@ interface ExecCall {
 }
 
 const RESOLVED: ResolvedVersion = { version: "0.1.0", tag: "v0.1.0", commitSha: "abc123" };
+
+// Sentinel home served by the os.homedir mock: any path that reached
+// cargoBinDir's homedir fallback would contain this marker rather than the
+// runner's real home, which varies by machine.
+const FAKE_HOME = path.join(os.tmpdir(), "protocolcanary-not-the-real-home");
+
+/** The binary name binaryName() picks on the runner this suite executes on. */
+function platformBinaryName(): string {
+  return process.platform === "win32" ? "stellar-canary.exe" : "stellar-canary";
+}
+
+/**
+ * Overrides `process.platform` for the duration of `run`, awaiting an async
+ * body so the override spans the whole awaited execution (a synchronous
+ * try/finally would restore the value as soon as `run` returned its pending
+ * promise, before the body finished). On Node >= 20 `process.platform` is a
+ * non-writable but configurable data property, so
+ * `vi.spyOn(process, "platform", "get")` cannot be used; redefine it and
+ * always restore, even when the body throws.
+ */
+async function withPlatform<T>(platform: NodeJS.Platform, run: () => Promise<T> | T): Promise<T> {
+  const original = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform, configurable: true, enumerable: true, writable: false });
+  try {
+    return await run();
+  } finally {
+    if (original !== undefined) {
+      Object.defineProperty(process, "platform", original);
+    }
+  }
+}
 
 class FakeResponse extends EventEmitter {
   statusCode: number;
@@ -160,6 +201,10 @@ describe("ensureCanaryInstalled", () => {
     cacheMocks.isFeatureAvailableMock.mockReset().mockReturnValue(false);
     cacheMocks.restoreCacheMock.mockReset().mockResolvedValue(undefined);
     cacheMocks.saveCacheMock.mockReset().mockResolvedValue(undefined);
+    // No test in this file depends on the runner's real home directory:
+    // anything reaching the homedir fallback without overriding the mock
+    // sees a sentinel that must not leak into a CARGO_HOME-based path.
+    osMocks.homedirMock.mockReset().mockReturnValue(FAKE_HOME);
     coreMocks.infoMock.mockReset();
     coreMocks.debugMock.mockReset();
     coreMocks.warningMock.mockReset();
@@ -345,5 +390,70 @@ describe("ensureCanaryInstalled", () => {
 
     expect(installed.binaryPath).toBe(binaryPath());
     expect(installCalls()).toHaveLength(0);
+  });
+
+  // #220: cargoBinDir is private and zero-argument, so it is pinned through
+  // its only observable effect on the install chain: the directory the
+  // candidate binary path is joined onto, as handed to the Actions cache.
+  // A regression that dropped CARGO_HOME (or joined the wrong segment) would
+  // silently break cache restore/save and existing-binary discovery.
+  it("anchors every binary path under CARGO_HOME/bin when CARGO_HOME is set (#220)", async () => {
+    process.env.CARGO_HOME = tempCargoHome;
+    cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+
+    await ensureCanaryInstalled(RESOLVED);
+
+    const expectedPath = path.join(tempCargoHome, "bin", platformBinaryName());
+    expect(cacheMocks.restoreCacheMock).toHaveBeenCalledWith([expectedPath], expect.any(String));
+    expect(cacheMocks.saveCacheMock).toHaveBeenCalledWith([expectedPath], expect.any(String));
+    // The homedir fallback must not be consulted while CARGO_HOME wins.
+    expect(osMocks.homedirMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to ~/.cargo/bin when CARGO_HOME is unset (#220)", async () => {
+    // beforeEach sets CARGO_HOME; remove it so the helper cannot satisfy
+    // itself from the environment and must use the homedir fallback, which
+    // the os mock serves as the FAKE_HOME sentinel.
+    delete process.env.CARGO_HOME;
+    cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+
+    await ensureCanaryInstalled(RESOLVED);
+
+    const expectedPath = path.join(FAKE_HOME, ".cargo", "bin", platformBinaryName());
+    expect(cacheMocks.restoreCacheMock).toHaveBeenCalledWith([expectedPath], expect.any(String));
+    expect(cacheMocks.saveCacheMock).toHaveBeenCalledWith([expectedPath], expect.any(String));
+    expect(osMocks.homedirMock).toHaveBeenCalled();
+  });
+
+  // #224: binaryName is private and zero-argument; its only branch is the
+  // process.platform check ("stellar-canary.exe" on win32, "stellar-canary"
+  // elsewhere). Pinned through the cache-path contract the same way, with
+  // the platform overridden so both branches are covered on any runner OS.
+  it("names the binary stellar-canary.exe when the platform is win32 (#224)", async () => {
+    // The saved cache path is the observation point; enable the cache so
+    // saveToCache actually runs (beforeEach disables it).
+    cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+    let savedPath: string | undefined;
+    await withPlatform("win32", async () => {
+      await ensureCanaryInstalled(RESOLVED);
+      const call = cacheMocks.saveCacheMock.mock.calls.at(-1);
+      savedPath = (call?.[0] as string[] | undefined)?.[0];
+    });
+
+    expect(savedPath).toBe(path.join(tempCargoHome, "bin", "stellar-canary.exe"));
+  });
+
+  it("names the binary stellar-canary (no .exe) on non-win32 platforms (#224)", async () => {
+    cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+    for (const platform of ["linux", "darwin", "freebsd", "openbsd"] as const) {
+      let savedPath: string | undefined;
+      await withPlatform(platform, async () => {
+        await ensureCanaryInstalled(RESOLVED);
+        const call = cacheMocks.saveCacheMock.mock.calls.at(-1);
+        savedPath = (call?.[0] as string[] | undefined)?.[0];
+      });
+
+      expect(savedPath).toBe(path.join(tempCargoHome, "bin", "stellar-canary"));
+    }
   });
 });
