@@ -75,6 +75,11 @@ All notable changes to this project are documented in this file.
   40-character commit SHA for the matching tag from the GitHub tags API,
   including that the SHA comes from the matching entry rather than the first
   one ([#192]).
+- Added the first unit tests for `main.ts`'s `reportFilePath` (now exported
+  for testing): one pinning the report path under `RUNNER_TEMP` when it is
+  set, and one pinning the `os.tmpdir()` fallback when it is unset — the
+  directory where the Action writes the JSON report every downstream step
+  parses and uploads ([#251]).
 
 ## [0.1.1]
 
