@@ -440,6 +440,32 @@ describe("ensureCanaryInstalled", () => {
     });
   });
 
+  // selectExpectedChecksum can return undefined when a manifest exists but
+  // names no file matching this runner's platform (a differently-structured
+  // upstream manifest). verifyInstalledBinary treats that as "relying on
+  // commit/tag pinning only" — a debug log, no throw — and #259 pins that
+  // defensive fallback: the install chain must still succeed and never
+  // fabricate an InstallationFailedError for a manifest that simply does not
+  // cover this platform.
+  it("falls back to commit/tag pinning when the manifest has no entry for this platform (#259)", async () => {
+    fs.writeFileSync(binaryPath(), "binary");
+    // Only unrelated file names: no exact match for the binary name and no
+    // name containing "stellar-canary" for the platform/arch fallbacks.
+    mockPublishedChecksums(
+      `${"f".repeat(64)}  some-other-tool-linux-x64\n` +
+        `${"e".repeat(64)}  README.txt\n`,
+    );
+
+    // Resolving at all proves no InstallationFailedError is thrown: the
+    // mismatch path would reject here.
+    await expect(ensureCanaryInstalled(RESOLVED)).resolves.toEqual({
+      binaryPath: binaryPath(),
+      version: "0.1.0",
+    });
+    expect(coreMocks.debugMock).toHaveBeenCalledWith(expect.stringContaining("no entry for this platform"));
+    expect(coreMocks.warningMock).not.toHaveBeenCalled();
+  });
+
   // #220: cargoBinDir is private and zero-argument, so it is pinned through
   // its only observable effect on the install chain: the directory the
   // candidate binary path is joined onto, as handed to the Actions cache.
