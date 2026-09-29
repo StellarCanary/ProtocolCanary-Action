@@ -58,6 +58,10 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Added a `renderSummaryMarkdown` test pinning that a report whose
+  `skipped` field is present but empty (`skipped: []`) renders no
+  skipped-fixtures section, closing out the three-way
+  undefined/empty/non-empty condition ([#264]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
