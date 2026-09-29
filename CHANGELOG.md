@@ -56,6 +56,14 @@ All notable changes to this project are documented in this file.
   less actionable error. `parseConfig` now requires the resolved path to be
   a regular file (`fs.statSync(...).isFile()`) rather than merely existing.
 
+### Fixed
+
+- `examples/protocol-28.yml`'s fixtures checkout no longer pins
+  `ref: v0.1.0`, a tag that does not exist in
+  `StellarCanary/ProtocolCanary-Fixtures` (whose only tag is
+  `protocol-28`); copying the documented example verbatim no longer fails
+  at the checkout step ([#267]).
+
 ### Testing
 
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
