@@ -58,6 +58,10 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Added unit coverage for `parseChecksumManifest`'s documented tolerance
+  of the standard `sha256sum` format: `#` comment lines and `*`-prefixed
+  binary-mode entries are parsed and enforced during checksum
+  verification ([#275]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
