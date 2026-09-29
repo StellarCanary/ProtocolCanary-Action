@@ -143,6 +143,10 @@ describe("Action end-to-end (via mock-canary)", () => {
     expect(outputs.status).toBe("pass");
     expect(outputs.passed).toBe("1");
     expect(outputs.failures).toBe("0");
+    expect(typeof outputs.report).toBe("string");
+    const passReport = outputs.report as string;
+    expect(path.isAbsolute(passReport)).toBe(true);
+    expect(fs.existsSync(passReport)).toBe(true);
     expect(fs.readFileSync(fixture.summaryPath, "utf8")).toContain("✅ **PASS**");
   });
 
@@ -185,6 +189,10 @@ describe("Action end-to-end (via mock-canary)", () => {
     const outputs = readOutputs(fixture.outputPath);
     expect(outputs.status).toBe("fail");
     expect(outputs.failures).toBe("1");
+    expect(typeof outputs.report).toBe("string");
+    const failReport = outputs.report as string;
+    expect(path.isAbsolute(failReport)).toBe(true);
+    expect(fs.existsSync(failReport)).toBe(true);
     expect(fs.readFileSync(fixture.summaryPath, "utf8")).toContain("NOT READY");
   });
 
@@ -237,5 +245,25 @@ describe("Action end-to-end (via mock-canary)", () => {
     expect(setFailedMock).toHaveBeenCalledTimes(1);
     expect(String(setFailedMock.mock.calls[0]?.[0])).toContain("could not be executed");
     expect(readOutputs(fixture.outputPath).status).toBe("execution-failed");
+  });
+
+  it("many-failures: summary lists all 60 failures even though GitHub truncates annotations at 50", async () => {
+    fixture = setUp("many-failures");
+    const { run } = await import("../../src/main");
+    await run();
+
+    expect(setFailedMock).toHaveBeenCalledTimes(1);
+    expect(errorMock).toHaveBeenCalledTimes(60); // all 60 fail results should produce annotations
+    const outputs = readOutputs(fixture.outputPath);
+    expect(outputs.status).toBe("fail");
+    expect(outputs.failures).toBe("60");
+
+    const summary = fs.readFileSync(fixture.summaryPath, "utf8");
+    // Verify all 60 test IDs appear in the summary's failure list
+    for (let i = 1; i <= 60; i++) {
+      expect(summary).toContain(`p28-xdr-many-${i}`);
+    }
+    // The summary should show 0 passed out of 60 total
+    expect(summary).toContain("0/60 applicable checks passed");
   });
 });

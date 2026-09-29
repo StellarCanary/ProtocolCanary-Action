@@ -1,0 +1,11 @@
+# Issue chooser configuration.
+# blank_issues_enabled is false on purpose: bug_report.md and
+# feature_request.md cover the intended public issue types, and forcing the
+# chooser funnels reporters through structured templates instead of a free-
+# form blank issue — reducing the chance of an accidental public
+# vulnerability disclosure (see SECURITY.md).
+blank_issues_enabled: false
+contact_links:
+  - name: Security / vulnerability report
+    url: https://github.com/StellarCanary/ProtocolCanary-Action/security/advisories/new
+    about: Do not file a public issue for vulnerabilities. Please report privately via GitHub's "Report a vulnerability" flow per SECURITY.md.
