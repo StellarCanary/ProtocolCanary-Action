@@ -4,6 +4,15 @@ import * as path from "node:path";
 
 import { ConfigNotFoundError, InvalidInputError } from "./errors";
 
+/**
+ * The Action's validated, typed input set consumed by its downstream
+ * execution modules.
+ *
+ * `protocol`, `config`, `network`, and `rpcUrl` are `undefined` when their
+ * corresponding optional inputs are unset. `fixturesDir`, `version`,
+ * `uploadReport`, `annotations`, and `timeoutMinutes` are always present
+ * because input parsing supplies their documented defaults.
+ */
 export interface ActionInputs {
   readonly protocol: number | undefined;
   readonly config: string | undefined;
