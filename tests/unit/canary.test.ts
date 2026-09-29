@@ -306,6 +306,36 @@ describe("ensureCanaryInstalled", () => {
     );
   });
 
+  // #228: cacheKeyFor is private and zero-argument; its only real branch is
+  // the `commitSha ?? tag` precedence. Pinned through the cache key it hands
+  // to restore/save — the observable surface it drives — so a regression
+  // that let the tag win could never slip through: two different commits
+  // under a moving tag would silently share (and poison) one cache entry.
+  it("prefers commitSha over tag for the cache key, even when both are present (#228)", async () => {
+    cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+
+    // RESOLVED carries both a tag and a commitSha: the SHA must win.
+    await ensureCanaryInstalled(RESOLVED);
+
+    const expected = `stellar-canary-${process.platform}-${process.arch}-abc123`;
+    expect(cacheMocks.restoreCacheMock).toHaveBeenCalledWith([binaryPath()], expected);
+    expect(cacheMocks.saveCacheMock).toHaveBeenCalledWith([binaryPath()], expected);
+    // And the tag must not leak into either key at all.
+    for (const call of [...cacheMocks.restoreCacheMock.mock.calls, ...cacheMocks.saveCacheMock.mock.calls]) {
+      expect(call[1]).not.toContain("v0.1.0");
+    }
+  });
+
+  it("falls back to the tag for the cache key when commitSha is absent (#228)", async () => {
+    cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+
+    await ensureCanaryInstalled({ ...RESOLVED, commitSha: undefined });
+
+    const expected = `stellar-canary-${process.platform}-${process.arch}-v0.1.0`;
+    expect(cacheMocks.restoreCacheMock).toHaveBeenCalledWith([binaryPath()], expected);
+    expect(cacheMocks.saveCacheMock).toHaveBeenCalledWith([binaryPath()], expected);
+  });
+
   it("ignores a cache hit whose binary has the wrong version", async () => {
     cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
     cacheMocks.restoreCacheMock.mockResolvedValue("cache-key");
