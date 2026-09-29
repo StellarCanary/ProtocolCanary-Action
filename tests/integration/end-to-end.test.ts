@@ -1,3 +1,4 @@
+import type * as actionsCore from "@actions/core";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -10,7 +11,7 @@ const { setFailedMock, errorMock, warningMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@actions/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@actions/core")>();
+  const actual = await importOriginal<typeof actionsCore>();
   return { ...actual, setFailed: setFailedMock, error: errorMock, warning: warningMock };
 });
 

@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
+import type * as osModule from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -53,13 +54,14 @@ vi.mock("node:https", () => ({
 }));
 
 vi.mock("node:os", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:os")>();
+  const actual = await importOriginal<typeof osModule>();
   return { ...actual, homedir: osMocks.homedirMock };
 });
 
 import { ensureCanaryInstalled } from "../../src/canary";
 import { CanaryNotFoundError, InstallationFailedError } from "../../src/errors";
-import { CANARY_REPO_URL, ResolvedVersion } from "../../src/version";
+import type { ResolvedVersion } from "../../src/version";
+import { CANARY_REPO_URL } from "../../src/version";
 
 interface ExecCallOptions {
   readonly ignoreReturnCode?: boolean;
