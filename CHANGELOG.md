@@ -75,6 +75,11 @@ All notable changes to this project are documented in this file.
   40-character commit SHA for the matching tag from the GitHub tags API,
   including that the SHA comes from the matching entry rather than the first
   one ([#192]).
+- Added unit coverage for `canary.ts`'s `cacheKeyFor`: one test pinning that
+  the Actions cache key uses `commitSha` even when a `tag` is also present
+  (so two commits under a moving tag can never share a cache entry), and one
+  pinning the `tag` fallback when no `commitSha` was resolved, observed
+  through the keys handed to the cache restore/save calls ([#228]).
 
 ## [0.1.1]
 
