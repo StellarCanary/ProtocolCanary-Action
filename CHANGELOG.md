@@ -58,6 +58,11 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Added a `resolveVersion` test simulating a timed-out tags-page request
+  (a `"timeout"` event from the underlying `https.get` request), pinning
+  that the documented "never throws" contract holds for `fetchTagsPage`'s
+  timeout handler too: the run resolves with `commitSha: undefined` and
+  falls back to tag pinning ([#263]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
