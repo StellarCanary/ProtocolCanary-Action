@@ -58,6 +58,10 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Added a `resolveVersion` test pinning that an explicit whitespace-only
+  `token` is treated as "no token" — the tag-lookup request carries no
+  `Authorization` header at all, matching the documented empty-secret
+  handling ([#262]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.

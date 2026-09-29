@@ -172,6 +172,18 @@ describe("resolveVersion", () => {
     expect(calls[0]?.headers.Authorization).toBe("Bearer ghp_from_env");
   });
 
+  it("sends no Authorization header when an explicit token is whitespace-only (#262)", async () => {
+    // resolveToken counts blank/whitespace-only values as "no token" so an
+    // empty secret never produces a bad header. An explicit whitespace-only
+    // token — not just an unset GITHUB_TOKEN — must land on that same path.
+    delete process.env.GITHUB_TOKEN;
+    const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
+    const resolved = await resolveVersion("0.1.0", { token: "   " });
+    expect(calls[0]?.headers).not.toHaveProperty("Authorization");
+    // The unauthenticated lookup still succeeds and pins the commit.
+    expect(resolved).toEqual({ version: "0.1.0", tag: "v0.1.0", commitSha: "abc123" });
+  });
+
   it("sends no Authorization header when no token is available", async () => {
     delete process.env.GITHUB_TOKEN;
     const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
