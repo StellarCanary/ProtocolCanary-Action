@@ -98,7 +98,8 @@ inputs:
       set any surrounding job- or step-level `timeout-minutes`
       comfortably higher than this value, otherwise GitHub's own timeout
       can terminate the step first with a generic error and no Canary
-      summary, annotations, or timeout diagnostic.
+      summary, annotations, or timeout diagnostic. Non-integer values are
+      truncated, not rejected (for example, "15.9" becomes 15).
     required: false
     default: "15"
 
