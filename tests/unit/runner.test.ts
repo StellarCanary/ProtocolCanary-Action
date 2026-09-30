@@ -1,11 +1,12 @@
-import { ChildProcess } from "node:child_process";
+import type * as childProcess from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CanaryExecutionFailedError, TimeoutError } from "../../src/errors";
-import { ActionInputs } from "../../src/inputs";
+import type { ActionInputs } from "../../src/inputs";
 import { buildCheckArgs, runCheck } from "../../src/runner";
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
@@ -14,7 +15,7 @@ const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 // pass-through of the real implementation; the timeout-escalation tests below
 // swap in a fake child via `mockImplementationOnce`.
 vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+  const actual = await importOriginal<typeof childProcess>();
   spawnMock.mockImplementation(actual.spawn);
   return { ...actual, spawn: spawnMock };
 });
