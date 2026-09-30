@@ -1,3 +1,4 @@
+import type * as actionsCore from "@actions/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { errorMock, warningMock } = vi.hoisted(() => ({
@@ -6,7 +7,7 @@ const { errorMock, warningMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@actions/core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@actions/core")>();
+  const actual = await importOriginal<typeof actionsCore>();
   return { ...actual, error: errorMock, warning: warningMock };
 });
 
