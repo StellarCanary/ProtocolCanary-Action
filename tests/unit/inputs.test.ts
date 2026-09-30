@@ -134,6 +134,18 @@ describe("getInputs", () => {
     expect(getInputs().rpcUrl).toBe("http://127.0.0.1:8000/soroban/rpc");
   });
 
+  it("rejects plain http for the IPv6 loopback [::1]", () => {
+    // Pins the current contract of isLocalHttp: the plain-http exemption
+    // matches only the literal hostnames "localhost" and "127.0.0.1", so
+    // the IPv6 loopback representation of the same machine is rejected even
+    // though it is a common way local Soroban RPC endpoints are addressed.
+    // This documents a known limitation rather than a regression; if IPv6
+    // loopback support is added intentionally later, update this test
+    // alongside that change.
+    process.env["INPUT_RPC-URL"] = "http://[::1]:8000/soroban/rpc";
+    expect(() => getInputs()).toThrow(InvalidInputError);
+  });
+
   it("rejects plain http for a non-local host", () => {
     process.env["INPUT_RPC-URL"] = "http://example.com/rpc";
     expect(() => getInputs()).toThrow(InvalidInputError);

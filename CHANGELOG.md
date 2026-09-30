@@ -75,6 +75,21 @@ All notable changes to this project are documented in this file.
   40-character commit SHA for the matching tag from the GitHub tags API,
   including that the SHA comes from the matching entry rather than the first
   one ([#192]).
+- Added unit coverage for `main.ts`'s `run()`: a run whose process is killed
+  by a signal (null exit code) is reported as an execution failure naming the
+  signal, and a `writeSummary` rejection on the otherwise-successful path
+  fails the run without overwriting the already-set pass/fail outputs
+  ([#271]).
+- Added end-to-end coverage for the `annotations` input's "off" state: a
+  fail run and a config-error (execution-failure) run with
+  `annotations: false` still fail the job and still write the job summary,
+  but emit no error/warning annotations ([#277]).
+- Added an end-to-end test that `upload-report: true` actually invokes the
+  artifact upload path: the artifact client's upload method is called once
+  with the stable name and the exact report file the run produced ([#278]).
+- Added an `inputs` test pinning that plain `http://` is rejected for the
+  IPv6 loopback `http://[::1]`, documenting the current
+  `localhost`/`127.0.0.1`-only exemption as a known contract ([#276]).
 
 ## [0.1.1]
 
