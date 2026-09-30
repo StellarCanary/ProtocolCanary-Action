@@ -56,6 +56,14 @@ All notable changes to this project are documented in this file.
   less actionable error. `parseConfig` now requires the resolved path to be
   a regular file (`fs.statSync(...).isFile()`) rather than merely existing.
 
+### Fixed
+
+- `examples/protocol-28.yml`'s fixtures checkout no longer pins
+  `ref: v0.1.0`, a tag that does not exist in
+  `StellarCanary/ProtocolCanary-Fixtures` (whose only tag is
+  `protocol-28`); copying the documented example verbatim no longer fails
+  at the checkout step ([#267]).
+
 ### Testing
 
 - Added a `resolveVersion` test simulating a timed-out tags-page request
@@ -63,6 +71,10 @@ All notable changes to this project are documented in this file.
   that the documented "never throws" contract holds for `fetchTagsPage`'s
   timeout handler too: the run resolves with `commitSha: undefined` and
   falls back to tag pinning ([#263]).
+- Added unit coverage for `parseChecksumManifest`'s documented tolerance
+  of the standard `sha256sum` format: `#` comment lines and `*`-prefixed
+  binary-mode entries are parsed and enforced during checksum
+  verification ([#275]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
@@ -80,6 +92,21 @@ All notable changes to this project are documented in this file.
   40-character commit SHA for the matching tag from the GitHub tags API,
   including that the SHA comes from the matching entry rather than the first
   one ([#192]).
+- Added unit coverage for `main.ts`'s `run()`: a run whose process is killed
+  by a signal (null exit code) is reported as an execution failure naming the
+  signal, and a `writeSummary` rejection on the otherwise-successful path
+  fails the run without overwriting the already-set pass/fail outputs
+  ([#271]).
+- Added end-to-end coverage for the `annotations` input's "off" state: a
+  fail run and a config-error (execution-failure) run with
+  `annotations: false` still fail the job and still write the job summary,
+  but emit no error/warning annotations ([#277]).
+- Added an end-to-end test that `upload-report: true` actually invokes the
+  artifact upload path: the artifact client's upload method is called once
+  with the stable name and the exact report file the run produced ([#278]).
+- Added an `inputs` test pinning that plain `http://` is rejected for the
+  IPv6 loopback `http://[::1]`, documenting the current
+  `localhost`/`127.0.0.1`-only exemption as a known contract ([#276]).
 
 ## [0.1.1]
 
