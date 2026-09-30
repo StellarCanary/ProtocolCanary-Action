@@ -32,9 +32,14 @@ what `.github/workflows/ci.yml` runs, plus a check that the committed
 | `src/artifact.ts` | Uploads the JSON report as a workflow artifact. |
 | `src/errors.ts` | Typed internal error classes. |
 | `src/version.ts` | Resolves a requested version to a pinned commit. |
+| `tests/unit/` | Vitest unit tests, generally one `*.test.ts` per `src/` module (matched by name), exercising it in isolation with `child_process`, `@actions/*`, and network calls stubbed. |
+| `tests/integration/` | End-to-end tests that run the whole Action (`src/main.ts`) against the mock CLI and assert the outputs, summary, annotations, and pass/fail behavior. |
+| `tests/fixtures/mock-canary.cjs` | The fake `stellar-canary` CLI every test runs in place of the real binary; it selects a result state via `MOCK_CANARY_SCENARIO` (see [Test commands](#test-commands)). |
 
 Each file has one responsibility; `main.ts` is the only place that wires
-them together and decides pass/fail. See [`docs/` in
+them together and decides pass/fail. `vitest.config.ts` collects both
+`tests/unit/**/*.test.ts` and `tests/integration/**/*.test.ts`, so new tests
+belong in one of those two directories. See [`docs/` in
 `Protocol-Canary`](https://github.com/StellarCanary/Protocol-Canary/tree/main/docs)
 for the CLI/JSON contract this Action consumes — that document, not this
 repository, is the source of truth for the CLI's behavior.
@@ -186,7 +191,13 @@ exit-code contract:
 
 ## Release process
 
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md`. Link every entry to the pull request that
+   introduced it with a trailing `([#123])` reference — e.g.
+   "- Add the annotations input ([#42])." — so the diff and discussion
+   for a change are one click away. Entries that predate the repository's
+   pull-request workflow (everything up to and including `v0.1.1`)
+   reference the commit that introduced the change instead, as
+   `([0de71ec])`, since no pull request exists for them.
 2. Update the supported-versions table in `SECURITY.md`: add the new
    version as supported and mark every previously released version
    unsupported, so the table stays in sync with `CHANGELOG.md`'s
@@ -194,7 +205,7 @@ exit-code contract:
 3. Tag `vX.Y.Z` on `main` (annotated tag, matching `package.json`'s
    version). `.github/workflows/release.yml` verifies the build and tests
    for that tag and publishes a GitHub Release.
-3. The floating major tag (e.g. `v1`) is moved automatically by
+4. The floating major tag (e.g. `v1`) is moved automatically by
    `.github/workflows/release.yml`, in the same job, after the release is
    created. No manual step is required. The workflow only ever moves the
    major tag forward: it is left untouched when the pushed tag is not the
