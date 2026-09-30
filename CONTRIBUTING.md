@@ -32,9 +32,14 @@ what `.github/workflows/ci.yml` runs, plus a check that the committed
 | `src/artifact.ts` | Uploads the JSON report as a workflow artifact. |
 | `src/errors.ts` | Typed internal error classes. |
 | `src/version.ts` | Resolves a requested version to a pinned commit. |
+| `tests/unit/` | Vitest unit tests, generally one `*.test.ts` per `src/` module (matched by name), exercising it in isolation with `child_process`, `@actions/*`, and network calls stubbed. |
+| `tests/integration/` | End-to-end tests that run the whole Action (`src/main.ts`) against the mock CLI and assert the outputs, summary, annotations, and pass/fail behavior. |
+| `tests/fixtures/mock-canary.cjs` | The fake `stellar-canary` CLI every test runs in place of the real binary; it selects a result state via `MOCK_CANARY_SCENARIO` (see [Test commands](#test-commands)). |
 
 Each file has one responsibility; `main.ts` is the only place that wires
-them together and decides pass/fail. See [`docs/` in
+them together and decides pass/fail. `vitest.config.ts` collects both
+`tests/unit/**/*.test.ts` and `tests/integration/**/*.test.ts`, so new tests
+belong in one of those two directories. See [`docs/` in
 `Protocol-Canary`](https://github.com/StellarCanary/Protocol-Canary/tree/main/docs)
 for the CLI/JSON contract this Action consumes — that document, not this
 repository, is the source of truth for the CLI's behavior.
