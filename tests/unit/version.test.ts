@@ -165,6 +165,13 @@ describe("resolveVersion", () => {
     expect(calls[0]?.headers["User-Agent"]).toBe("ProtocolCanary-Action");
   });
 
+  it("treats a whitespace-only explicit token as no token", async () => {
+    delete process.env.GITHUB_TOKEN;
+    const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
+    await resolveVersion("0.1.0", { token: " \t\n " });
+    expect(calls[0]?.headers.Authorization).toBeUndefined();
+  });
+
   it("falls back to GITHUB_TOKEN from the environment when no explicit token is given", async () => {
     process.env.GITHUB_TOKEN = "ghp_from_env";
     const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
