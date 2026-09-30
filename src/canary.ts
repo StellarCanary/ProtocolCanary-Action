@@ -8,7 +8,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { CanaryNotFoundError, InstallationFailedError } from "./errors";
-import { CANARY_API_REPO_URL, CANARY_REPO_URL, ResolvedVersion } from "./version";
+import type { ResolvedVersion } from "./version";
+import { CANARY_API_REPO_URL, CANARY_REPO_URL } from "./version";
 
 export interface InstalledCanary {
   readonly binaryPath: string;
