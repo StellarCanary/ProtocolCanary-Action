@@ -124,8 +124,10 @@ class FakeResponse extends EventEmitter {
 }
 
 class FakeRequest extends EventEmitter {
-  destroy(): void {
-    /* no-op for this fake */
+  destroy(error?: Error): void {
+    if (error) {
+      this.emit("error", error);
+    }
   }
 }
 
@@ -392,6 +394,34 @@ describe("ensureCanaryInstalled", () => {
 
     expect(installed.binaryPath).toBe(binaryPath());
     expect(installCalls()).toHaveLength(0);
+  });
+
+  it("falls back to commit/tag pinning when checksum manifest parses to zero entries", async () => {
+    fs.writeFileSync(binaryPath(), "binary");
+    mockPublishedChecksums("# Just some comments\n\n\ninvalid line here\n");
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.binaryPath).toBe(binaryPath());
+    expect(installCalls()).toHaveLength(0);
+    expect(httpsGetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("checksum lookup degrades gracefully when release API request times out", async () => {
+    fs.writeFileSync(binaryPath(), "binary");
+    httpsGetMock.mockImplementationOnce(() => {
+      const request = new FakeRequest();
+      queueMicrotask(() => {
+        request.emit("timeout");
+      });
+      return request;
+    });
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.binaryPath).toBe(binaryPath());
+    expect(installCalls()).toHaveLength(0);
+    expect(httpsGetMock).toHaveBeenCalledTimes(1);
   });
 
   // #220: cargoBinDir is private and zero-argument, so it is pinned through
