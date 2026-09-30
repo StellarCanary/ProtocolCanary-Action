@@ -115,7 +115,7 @@ jobs:
 | Input | Description | Default |
 |---|---|---|
 | `protocol` | Target Stellar protocol version (`--protocol`). | (from `.stellar-canary.toml`, or 28) |
-| `config` | Path to `.stellar-canary.toml` (`--config`). Fails clearly if the given path does not exist. | (CLI default lookup) |
+| `config` | Path to `.stellar-canary.toml` (`--config`). Fails clearly if the given path does not exist, or is not a regular file (e.g. a directory). | (CLI default lookup) |
 | `network` | Network for live RPC/Soroban checks (`--network`). | `testnet` (CLI default) |
 | `rpc-url` | Stellar RPC endpoint (`--rpc-url`). Must be `https://`, or `http://localhost`/`127.0.0.1` for local development. | (none) |
 | `fixtures-dir` | Path to a directory of fixtures, e.g. a checkout of `ProtocolCanary-Fixtures` (`--fixtures-dir`). | `fixtures` |
@@ -302,7 +302,7 @@ what to do about each.
 | `Configuration file not found: <path>` | The `config` input names a file that does not exist. | Fix the path (it is resolved against the job's working directory) or check out the file before this step. |
 | `Failed to publish Canary summary.` | The GitHub job summary could not be written — an infrastructure problem, distinct from both failure kinds above. | Re-run the job; if it reproduces on a GitHub-hosted runner, file a bug with the run link. |
 
-`Invalid "…" input` messages (`protocol`, `rpc-url`, `version`,
+`Invalid "…" input` messages (`protocol`, `config`, `rpc-url`, `version`,
 `timeout-minutes`, and the boolean inputs) state the expected format in
 the message itself; see [Inputs](#inputs) for each input's accepted
 values.
@@ -347,6 +347,14 @@ install one before this Action runs — see
 workflow that does this with `dtolnay/rust-toolchain` ahead of invoking
 this Action. A successful build is cached (best-effort; never required for
 correctness) using `actions/cache`.
+
+This Action is also a JavaScript action, declared as `runs: using: node24`
+in `action.yml`, so the runner must additionally provide the Node 24
+Actions runtime. GitHub-hosted runners always satisfy this; a self-hosted
+runner needs an
+[Actions Runner](https://github.com/actions/runner/releases) version new
+enough to bundle Node 24 (v2.328.0 or later), or the step fails to start
+with an opaque runtime error before Canary is ever installed or run.
 
 ## Versioning
 
