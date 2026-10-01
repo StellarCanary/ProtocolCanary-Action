@@ -37,13 +37,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Capture CI-generated bundle
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-generated-dist
-          path: dist/
-
       - name: Verify committed dist/ matches a fresh build
         run: |
           if ! git diff --quiet -- dist; then
