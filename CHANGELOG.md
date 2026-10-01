@@ -66,6 +66,19 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Added a `resolveVersion` test pinning that an explicit whitespace-only
+  `token` is treated as "no token" — the tag-lookup request carries no
+  `Authorization` header at all, matching the documented empty-secret
+  handling ([#262]).
+- Added a `resolveVersion` test simulating a timed-out tags-page request
+  (a `"timeout"` event from the underlying `https.get` request), pinning
+  that the documented "never throws" contract holds for `fetchTagsPage`'s
+  timeout handler too: the run resolves with `commitSha: undefined` and
+  falls back to tag pinning ([#263]).
+- Added a `renderSummaryMarkdown` test pinning that a report whose
+  `skipped` field is present but empty (`skipped: []`) renders no
+  skipped-fixtures section, closing out the three-way
+  undefined/empty/non-empty condition ([#264]).
 - Added unit coverage for `parseChecksumManifest`'s documented tolerance
   of the standard `sha256sum` format: `#` comment lines and `*`-prefixed
   binary-mode entries are parsed and enforced during checksum
