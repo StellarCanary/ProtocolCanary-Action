@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Execution-failure job summaries no longer break when the raw diagnostic
+  (Canary's stderr, a timeout notice) itself contains a ``` sequence, e.g.
+  a compiler or panic message quoting a code block: the diagnostic fence is
+  now made longer than the longest backtick run the diagnostic contains, so
+  the diagnostic still renders as a single well-formed code block instead of
+  closing the fence early and spilling broken markdown into the summary
+  ([#269]).
+
 ### Documentation
 
 - README gains a "Troubleshooting" section mapping the most common

@@ -237,4 +237,71 @@ describe("renderExecutionFailureMarkdown", () => {
     const markdown = renderExecutionFailureMarkdown("timed out", "");
     expect(markdown).toContain("(no diagnostic output)");
   });
+
+  // The diagnostic is raw text from an external process, so it may itself
+  // contain ``` (e.g. a compiler or panic message quoting a code block). A
+  // fence is only closed by an equally long backtick run at line start, so
+  // the fix makes the fence strictly longer than anything the diagnostic
+  // contains and the whole diagnostic still renders as one code block (#269).
+  it("keeps a diagnostic containing triple backticks inside the fence (#269)", () => {
+    const diagnostic = [
+      "error: proc-macro panic:",
+      "```rust",
+      "let x = 1; // quoted code from the panic message",
+      "```",
+      "stack backtrace:",
+    ].join("\n");
+    const markdown = renderExecutionFailureMarkdown("check failed to run", diagnostic);
+
+    // The opening fence must be a longer run than any backtick run inside
+    // the diagnostic, so no line of the diagnostic can close or reopen it.
+    const opening = /^(`{4,})text$/m.exec(markdown);
+    expect(opening).not.toBeNull();
+    const fence = opening![1]!;
+    const longestDiagnosticRun = Math.max(...[...diagnostic.matchAll(/`+/g)].map((match) => match[0].length));
+    expect(fence.length).toBeGreaterThan(longestDiagnosticRun);
+
+    // Exactly one opening fence line and one closing fence line: no line of
+    // the diagnostic itself closes the block early. (A fence is closed by an
+    // equally long run at line start, so any line whose leading run reaches
+    // fence length must be one of the two fence lines.)
+    const lines = markdown.split("\n");
+    expect(lines.filter((line) => line === `${fence}text`)).toHaveLength(1);
+    expect(lines.filter((line) => line === fence)).toHaveLength(1);
+    for (const line of lines) {
+      const run = /^`+/.exec(line)?.[0] ?? "";
+      if (run.length >= fence.length) {
+        expect([fence, `${fence}text`]).toContain(line);
+      }
+    }
+
+    // The verbatim diagnostic content survives inside the single block.
+    expect(markdown).toContain("```rust");
+    expect(markdown).toContain("// quoted code from the panic message");
+    expect(markdown).toContain("stack backtrace:");
+  });
+
+  it("keeps a diagnostic made of backtick runs alone inside the fence (#269)", () => {
+    // Worst case: every line is a run of backticks long enough to close a
+    // fixed-length fence, including runs of the same length as the
+    // diagnostic's longest run.
+    const diagnostic = ["```", "``````", "``````"].join("\n");
+    const markdown = renderExecutionFailureMarkdown("spawn failed", diagnostic);
+
+    const opening = /^(`{4,})text$/m.exec(markdown);
+    expect(opening).not.toBeNull();
+    const fence = opening![1]!;
+    // Six backticks inside; the fence must be strictly longer than that.
+    expect(fence.length).toBeGreaterThan(6);
+
+    const lines = markdown.split("\n");
+    expect(lines.filter((line) => line === `${fence}text`)).toHaveLength(1);
+    expect(lines.filter((line) => line === fence)).toHaveLength(1);
+    for (const line of lines) {
+      const run = /^`+/.exec(line)?.[0] ?? "";
+      if (run.length >= fence.length) {
+        expect([fence, `${fence}text`]).toContain(line);
+      }
+    }
+  });
 });
