@@ -144,6 +144,41 @@ describe("resolveVersion", () => {
     await expect(resolveVersion("0.1.0")).resolves.toMatchObject({ commitSha: undefined });
   });
 
+  it("degrades to commitSha undefined on a timed-out tag lookup request, never throwing (#263)", async () => {
+    // fetchTagsPage has its own "timeout" handler (distinct from the
+    // checksum-lookup timeout in canary.ts): it destroys the request with an
+    // error, which reaches the promise chain as a rejection that
+    // resolveVersion's catch turns into commitSha: undefined. Serving pages
+    // would never exercise it, so the mock is driven directly here: a fake
+    // request that only ever emits "timeout".
+    delete process.env.GITHUB_TOKEN;
+    class TimeoutOnlyRequest extends EventEmitter {
+      // Real ClientRequest.destroy(error) emits "error" with that error —
+      // exactly how the timeout rejection travels to fetchTagsPage's reject.
+      destroy(error?: Error): void {
+        if (error !== undefined) {
+          this.emit("error", error);
+        }
+      }
+    }
+    const request = new TimeoutOnlyRequest();
+    vi.mocked(https.get).mockImplementation(() => {
+      // Emit after the handlers are attached (fetchTagsPage wires "timeout"
+      // synchronously after https.get returns, so a queued emission always
+      // lands on a wired handler).
+      queueMicrotask(() => request.emit("timeout"));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return request as any;
+    });
+
+    await expect(resolveVersion("0.1.0")).resolves.toEqual({
+      version: "0.1.0",
+      tag: "v0.1.0",
+      commitSha: undefined,
+    });
+    expect(vi.mocked(https.get)).toHaveBeenCalledTimes(1);
+  });
+
   it("degrades to commitSha undefined on malformed JSON, never throwing", async () => {
     mockHttpsPages([{ body: "not json" }]);
     await expect(resolveVersion("0.1.0")).resolves.toMatchObject({ commitSha: undefined });
@@ -165,11 +200,30 @@ describe("resolveVersion", () => {
     expect(calls[0]?.headers["User-Agent"]).toBe("ProtocolCanary-Action");
   });
 
+  it("treats a whitespace-only explicit token as no token", async () => {
+    delete process.env.GITHUB_TOKEN;
+    const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
+    await resolveVersion("0.1.0", { token: " \t\n " });
+    expect(calls[0]?.headers.Authorization).toBeUndefined();
+  });
+
   it("falls back to GITHUB_TOKEN from the environment when no explicit token is given", async () => {
     process.env.GITHUB_TOKEN = "ghp_from_env";
     const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
     await resolveVersion("0.1.0");
     expect(calls[0]?.headers.Authorization).toBe("Bearer ghp_from_env");
+  });
+
+  it("sends no Authorization header when an explicit token is whitespace-only (#262)", async () => {
+    // resolveToken counts blank/whitespace-only values as "no token" so an
+    // empty secret never produces a bad header. An explicit whitespace-only
+    // token — not just an unset GITHUB_TOKEN — must land on that same path.
+    delete process.env.GITHUB_TOKEN;
+    const calls = mockHttpsPages([{ body: tagsBody([{ name: "v0.1.0", sha: "abc123" }]) }]);
+    const resolved = await resolveVersion("0.1.0", { token: "   " });
+    expect(calls[0]?.headers).not.toHaveProperty("Authorization");
+    // The unauthenticated lookup still succeeds and pins the commit.
+    expect(resolved).toEqual({ version: "0.1.0", tag: "v0.1.0", commitSha: "abc123" });
   });
 
   it("sends no Authorization header when no token is available", async () => {
