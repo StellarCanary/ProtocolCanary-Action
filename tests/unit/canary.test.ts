@@ -394,6 +394,35 @@ describe("ensureCanaryInstalled", () => {
     expect(installCalls()).toHaveLength(0);
   });
 
+  // #273: selectExpectedChecksum filters to stellar-canary-named entries,
+  // tries a platform+arch match, then a platform-only match, and otherwise
+  // falls back to a single unambiguous candidate. With several
+  // stellar-canary entries for *other* platforms and none for this runner's,
+  // every branch falls through and the lookup returns undefined — which must
+  // degrade to commit/tag pinning exactly like the no-entries-at-all case,
+  // not fail the install. This pins that specific fallthrough.
+  it("falls back to commit/tag pinning when the manifest names only other platforms' binaries (#273)", async () => {
+    fs.writeFileSync(binaryPath(), "binary");
+    // Pick two platforms this runner is definitively not on, so neither a
+    // platform+arch nor a platform-only match can succeed on any runner OS
+    // the suite executes on (no runner is both linux and darwin or win32,
+    // and the pair is recomputed from the actual process.platform).
+    const otherPlatforms = process.platform === "linux" ? ["darwin", "win32"] : ["linux", "win32"];
+    const manifest = [
+      `${"a".repeat(64)}  stellar-canary-${otherPlatforms[0]}-x64`,
+      `${"b".repeat(64)}  stellar-canary-${otherPlatforms[1]}-arm64`,
+      "",
+    ].join("\n");
+    mockPublishedChecksums(manifest);
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed).toEqual({ binaryPath: binaryPath(), version: "0.1.0" });
+    expect(installCalls()).toHaveLength(0);
+    // The degradation is deliberate, not silent luck: it is logged at debug.
+    expect(coreMocks.debugMock).toHaveBeenCalledWith(expect.stringContaining("no entry for this platform"));
+  });
+
   // #275: parseChecksumManifest documents tolerance for the standard
   // sha256sum output format — `#` comment lines and the `*` binary-mode
   // marker before the file name — but nothing exercised either. Pinned
