@@ -23,7 +23,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: StellarCanary/ProtocolCanary-Fixtures
-          ref: v0.1.0
+          # protocol-28 is the actual tag in ProtocolCanary-Fixtures (there
+          # is no v0.1.0 there). Pin to it so a new pack for a future
+          # protocol cannot change what this example checks against.
+          ref: protocol-28
           path: canary-fixtures
 
       - name: Stellar Protocol Canary
