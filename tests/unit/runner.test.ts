@@ -156,7 +156,9 @@ describe("runCheck", () => {
 
   itWithUnixSignals("rejects with TimeoutError and kills the process when it runs too long", async () => {
     process.env.MOCK_CANARY_SCENARIO = "timeout";
-    await expect(runCheck(MOCK_CANARY, ["check"], 200)).rejects.toThrow(TimeoutError);
+    await expect(
+      runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], 200),
+    ).rejects.toThrow(TimeoutError);
   });
 
   it("rejects with CanaryExecutionFailedError when the binary cannot be started", async () => {
@@ -207,7 +209,7 @@ describe("runCheck", () => {
       process.env.MOCK_CANARY_SCENARIO = "timeout";
       const before = snapshotListenerCounts();
 
-      const pending = runCheck(MOCK_CANARY, ["check"], 200);
+      const pending = runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], 200);
 
       for (const signal of SIGNALS) {
         expect(process.listenerCount(signal)).toBe(before[signal] + 1);

@@ -91,8 +91,12 @@ describe("getInputs", () => {
       // different drive from the system temp directory. In that case
       // path.relative returns an absolute path, so comparing it with the raw
       // value is not a portable way to prove resolution occurred.
-      expect(inputs.config).toBe(path.resolve(relative));
-      expect(path.isAbsolute(inputs.config)).toBe(true);
+      const resolvedConfig = inputs.config;
+      expect(resolvedConfig).toBe(path.resolve(relative));
+      if (resolvedConfig === undefined) {
+        throw new Error("Expected the validated config path to be present.");
+      }
+      expect(path.isAbsolute(resolvedConfig)).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
