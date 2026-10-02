@@ -18,6 +18,10 @@ const OVERALL_LABEL: Readonly<Record<OverallStatus, string>> = {
   error: "🚫 **ERROR**",
 };
 
+/** Aggregates one surface's results into its summary table row. Returns
+ * `undefined` when no results match the surface, which is how
+ * `renderSummaryMarkdown` omits untouched surfaces (e.g. an offline run has
+ * no rpc/soroban rows) instead of fabricating a pass. */
 function surfaceRowLabel(results: CanaryReport["results"], surface: Surface): string | undefined {
   const forSurface = results.filter((r) => r.surface === surface);
   if (forSurface.length === 0) {

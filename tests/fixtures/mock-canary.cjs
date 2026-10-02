@@ -258,6 +258,33 @@ switch (scenario) {
     break;
   }
 
+  case "many-failures": {
+    // Simulates a report with more failures than GitHub's per-job annotation limit (50).
+    // This tests that the job summary still lists all results even when annotations are truncated.
+    const manyResults = [];
+    for (let i = 1; i <= 60; i++) {
+      manyResults.push({
+        testId: `p28-xdr-many-${i}`,
+        protocol: 28,
+        surface: "xdr",
+        status: "fail",
+        summary: `failure ${i}`,
+        details: `detail for failure ${i}`,
+        durationMs: 1,
+        fixtureId: `p28-xdr-many-${i}`,
+      });
+    }
+    emit(
+      baseReport({
+        status: "fail",
+        counts: { total: 60, passed: 0, failed: 60, warnings: 0, errors: 0, skipped: 0 },
+        results: manyResults,
+      }),
+      1,
+    );
+    break;
+  }
+
   default:
     fail(5, `unknown MOCK_CANARY_SCENARIO ${JSON.stringify(scenario)}`);
 }
