@@ -87,7 +87,16 @@ describe("getInputs", () => {
       // The value forwarded to the CLI as --config must be exactly the path
       // the existence check validated, not the string as written.
       expect(inputs.config).toBe(configPath);
-      expect(inputs.config).not.toBe(relative);
+      // GitHub-hosted Windows runners can check the repository out on a
+      // different drive from the system temp directory. In that case
+      // path.relative returns an absolute path, so comparing it with the raw
+      // value is not a portable way to prove resolution occurred.
+      const resolvedConfig = inputs.config;
+      expect(resolvedConfig).toBe(path.resolve(relative));
+      if (resolvedConfig === undefined) {
+        throw new Error("Expected the validated config path to be present.");
+      }
+      expect(path.isAbsolute(resolvedConfig)).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -132,7 +132,11 @@ function readOutputs(outputPath: string): Record<string, string> {
   return outputs;
 }
 
-describe("Action end-to-end (via mock-canary)", () => {
+// The fixture is an executable script without a Windows PE wrapper. The
+// platform-specific binary-name branch is covered by canary.test.ts; skip
+// this process-level fixture suite on Windows rather than falling through to
+// a real cargo install during CI.
+describe.skipIf(process.platform === "win32")("Action end-to-end (via mock-canary)", () => {
   let fixture: Fixture;
 
   afterEach(() => {
