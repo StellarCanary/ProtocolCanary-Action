@@ -83,6 +83,11 @@ All notable changes to this project are documented in this file.
   of the standard `sha256sum` format: `#` comment lines and `*`-prefixed
   binary-mode entries are parsed and enforced during checksum
   verification ([#275]).
+- Added unit coverage for the checksum-verification fallback when a published
+  checksum manifest exists but names no file matching the runner's platform:
+  `ensureCanaryInstalled` still succeeds with a debug log (commit/tag pinning
+  stands) and never throws `InstallationFailed` for a manifest that simply
+  does not cover this platform ([#259]).
 - Added unit coverage for `runCheck`'s `SIGINT`/`SIGTERM` forwarding to the
   child process, for cleanup of those listeners after settling, and for the
   cancellation branch where the child exits with a null code and a signal.
