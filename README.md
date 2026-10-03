@@ -49,6 +49,22 @@ All compatibility logic lives in
 Canonical fixtures live in
 [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures).
 
+## Prerequisites
+
+Before following the quick-start example, make sure the runner meets the
+requirements below:
+
+- A Rust/Cargo toolchain is available. This Action installs
+  `Protocol-Canary` from source with `cargo install --git`, so a
+  self-hosted or non-Ubuntu runner must install Rust first; GitHub-hosted
+  Ubuntu runners include Cargo by default.
+- The `version` input matches a real release tag in
+  `StellarCanary/Protocol-Canary`. It is pinned to a specific upstream
+  release and never tracks `main`.
+
+See [Installation & integrity](#installation--integrity) and the `version`
+entry in [Inputs](#inputs) for the full explanation and setup guidance.
+
 ## Quick start
 
 ```yaml
@@ -159,6 +175,20 @@ A separate failure — the job summary itself failing to publish — is
 reported as "Failed to publish Canary summary," distinct from both of the
 above.
 
+### Annotation limits
+
+GitHub enforces a platform-level cap on how many annotations are surfaced
+in the UI per step and per workflow run, and silently drops any beyond
+that cap. This Action emits one annotation per failing, erroring, or
+warning result and does not batch or truncate, so a very large fixture set
+— or a run with many simultaneous failures — can produce more annotations
+than GitHub will display.
+
+That cap applies only to annotations. The job summary and the JSON report
+list every result regardless, so treat them, not the annotations, as the
+complete record of what Canary found. See GitHub's
+[workflow command documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands)
+for the platform's exact behavior.
 ### What the job summary looks like
 
 The summary is rendered by `renderSummaryMarkdown` in
@@ -373,6 +403,9 @@ Action and will be called out here explicitly.
 
 - This Action depends on a compatible `Protocol-Canary` release; see the
   version table above.
+- Only Protocol 28 has fixtures published upstream in
+  [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
+  at this time.
 - Network-dependent checks (RPC, Soroban) can fail if the configured RPC
   endpoint is temporarily unavailable — that is a real result, not an
   Action bug.
