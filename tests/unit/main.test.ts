@@ -81,7 +81,7 @@ vi.mock("../../src/summary", async (importOriginal) => {
   };
 });
 
-import { run } from "../../src/main";
+import { reportFilePath, run } from "../../src/main";
 
 const BINARY_PATH = path.join("/fake-cargo-home", "bin", "stellar-canary");
 
@@ -209,5 +209,23 @@ describe("run", () => {
     expect(writeSummaryMock).toHaveBeenCalledTimes(1);
     expect(errorMock).not.toHaveBeenCalled();
     expect(warningMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("reportFilePath", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("resolves under RUNNER_TEMP when set", () => {
+    vi.stubEnv("RUNNER_TEMP", path.join("tmp", "runner"));
+
+    expect(reportFilePath()).toBe(path.join("tmp", "runner", "stellar-canary-report.json"));
+  });
+
+  it("falls back to os.tmpdir when RUNNER_TEMP is unset", () => {
+    vi.stubEnv("RUNNER_TEMP", undefined);
+
+    expect(reportFilePath()).toBe(path.join(os.tmpdir(), "stellar-canary-report.json"));
   });
 });
