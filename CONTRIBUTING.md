@@ -2,9 +2,12 @@
 
 ## Development setup
 
-Node.js >= 20 (the Action itself runs on the `node24` Actions runtime; any
-supported Node 20+ works for local development). npm is the package
-manager; the lockfile (`package-lock.json`) is committed and authoritative.
+Node 24. The root [`.nvmrc`](.nvmrc) pins it (`nvm use`), matching the
+`node24` Actions runtime the Action declares in `action.yml` and the
+`node-version: 24` CI uses. `package.json` keeps a looser floor
+(`engines.node >= 20`); any supported Node 20+ can run the tests, but new
+code and local setup should target 24. npm is the package manager; the
+lockfile (`package-lock.json`) is committed and authoritative.
 
 ```bash
 npm ci
@@ -22,6 +25,7 @@ what `.github/workflows/ci.yml` runs, plus a check that the committed
 
 | Path | Responsibility |
 |---|---|
+| `.nvmrc` | Pins the local Node version to the `node24` runtime CI and `action.yml` use. |
 | `src/main.ts` | Orchestrates a run; the only file with `if (require.main === module)`. |
 | `src/inputs.ts` | Reads and validates every Action input. |
 | `src/canary.ts` | Resolves/installs the `stellar-canary` binary. |

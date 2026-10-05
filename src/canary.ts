@@ -11,8 +11,18 @@ import { CanaryNotFoundError, InstallationFailedError } from "./errors";
 import type { ResolvedVersion } from "./version";
 import { CANARY_API_REPO_URL, CANARY_REPO_URL } from "./version";
 
+/**
+ * Describes a Canary binary that has been located or restored and verified
+ * ready for the Action to execute.
+ *
+ * The reported version is read from the binary itself and has been checked
+ * against the resolved requested version; it is not merely the requested
+ * input value.
+ */
 export interface InstalledCanary {
+  /** Absolute path to the verified executable on the runner. */
   readonly binaryPath: string;
+  /** Version reported by the executable after verification. */
   readonly version: string;
 }
 

@@ -87,7 +87,16 @@ describe("getInputs", () => {
       // The value forwarded to the CLI as --config must be exactly the path
       // the existence check validated, not the string as written.
       expect(inputs.config).toBe(configPath);
-      expect(inputs.config).not.toBe(relative);
+      // GitHub-hosted Windows runners can check the repository out on a
+      // different drive from the system temp directory. In that case
+      // path.relative returns an absolute path, so comparing it with the raw
+      // value is not a portable way to prove resolution occurred.
+      const resolvedConfig = inputs.config;
+      expect(resolvedConfig).toBe(path.resolve(relative));
+      if (resolvedConfig === undefined) {
+        throw new Error("Expected the validated config path to be present.");
+      }
+      expect(path.isAbsolute(resolvedConfig)).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -112,6 +121,11 @@ describe("getInputs", () => {
     expect(getInputs().network).toBe("testnet");
   });
 
+  it("trims surrounding whitespace from rpc-url", () => {
+    process.env["INPUT_RPC-URL"] = "  https://soroban-testnet.stellar.org  ";
+    expect(getInputs().rpcUrl).toBe("https://soroban-testnet.stellar.org");
+  });
+
   it("treats an all-whitespace network as unset", () => {
     process.env.INPUT_NETWORK = "   ";
     expect(getInputs().network).toBeUndefined();
@@ -132,6 +146,18 @@ describe("getInputs", () => {
     // refactoring parseRpcUrl must keep this working alongside localhost.
     process.env["INPUT_RPC-URL"] = "http://127.0.0.1:8000/soroban/rpc";
     expect(getInputs().rpcUrl).toBe("http://127.0.0.1:8000/soroban/rpc");
+  });
+
+  it("rejects plain http for the IPv6 loopback [::1]", () => {
+    // Pins the current contract of isLocalHttp: the plain-http exemption
+    // matches only the literal hostnames "localhost" and "127.0.0.1", so
+    // the IPv6 loopback representation of the same machine is rejected even
+    // though it is a common way local Soroban RPC endpoints are addressed.
+    // This documents a known limitation rather than a regression; if IPv6
+    // loopback support is added intentionally later, update this test
+    // alongside that change.
+    process.env["INPUT_RPC-URL"] = "http://[::1]:8000/soroban/rpc";
+    expect(() => getInputs()).toThrow(InvalidInputError);
   });
 
   it("rejects plain http for a non-local host", () => {
@@ -177,5 +203,10 @@ describe("getInputs", () => {
   it("parses a valid timeout", () => {
     process.env["INPUT_TIMEOUT-MINUTES"] = "30";
     expect(getInputs().timeoutMinutes).toBe(30);
+  });
+
+  it("truncates a fractional timeout to an integer", () => {
+    process.env["INPUT_TIMEOUT-MINUTES"] = "15.9";
+    expect(getInputs().timeoutMinutes).toBe(15);
   });
 });

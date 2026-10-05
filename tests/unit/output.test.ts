@@ -43,6 +43,32 @@ describe("parseReport", () => {
     expect(() => parseReport("[1, 2, 3]")).toThrow(InvalidReportError);
   });
 
+  // #270: an array passes `typeof parsed === "object"`, so the existing
+  // array test above is rejected by the later schemaVersion check, not by
+  // the non-object guard itself. These pin that guard directly: JSON null,
+  // numbers, strings, and booleans are all non-objects the Action must
+  // reject with the same "not a report object" message before any field
+  // access is attempted on the parsed value.
+  it("rejects JSON null as not a report object (#270)", () => {
+    expect(() => parseReport("null")).toThrow(InvalidReportError);
+    expect(() => parseReport("null")).toThrow(/not a report object/);
+  });
+
+  it("rejects a JSON number as not a report object (#270)", () => {
+    expect(() => parseReport("42")).toThrow(InvalidReportError);
+    expect(() => parseReport("42")).toThrow(/not a report object/);
+  });
+
+  it("rejects a JSON string as not a report object (#270)", () => {
+    expect(() => parseReport('"a report"')).toThrow(InvalidReportError);
+    expect(() => parseReport('"a report"')).toThrow(/not a report object/);
+  });
+
+  it("rejects a JSON boolean as not a report object (#270)", () => {
+    expect(() => parseReport("true")).toThrow(InvalidReportError);
+    expect(() => parseReport("true")).toThrow(/not a report object/);
+  });
+
   it("rejects a report missing schemaVersion", () => {
     const { schemaVersion: _schemaVersion, ...rest } = JSON.parse(VALID_REPORT) as Record<string, unknown>;
     expect(() => parseReport(JSON.stringify(rest))).toThrow(InvalidReportError);

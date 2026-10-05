@@ -107,6 +107,17 @@ describe("renderSummaryMarkdown", () => {
     expect(markdown).toContain("p27-xdr-legacy");
   });
 
+  it("omits the skipped-fixtures section when skipped is an empty array (#264)", () => {
+    const markdown = renderSummaryMarkdown(
+      report({
+        skipped: [],
+      }),
+    );
+    expect(markdown).not.toContain("<details><summary>Skipped fixtures</summary>");
+    expect(markdown).not.toContain("Skipped fixtures");
+    expect(markdown).not.toContain("</details>");
+  });
+
   it("renders the network name with the observed protocol suffix when both are present", () => {
     // `network` is populated whenever a network/rpc-url is used (see the
     // example workflows), so this branch is not an edge case: the

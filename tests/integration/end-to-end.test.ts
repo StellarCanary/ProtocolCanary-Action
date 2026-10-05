@@ -4,16 +4,26 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
-const { setFailedMock, errorMock, warningMock } = vi.hoisted(() => ({
+const { setFailedMock, errorMock, warningMock, infoMock } = vi.hoisted(() => ({
   setFailedMock: vi.fn(),
   errorMock: vi.fn(),
   warningMock: vi.fn(),
+  infoMock: vi.fn(),
 }));
 
 vi.mock("@actions/core", async (importOriginal) => {
   const actual = await importOriginal<typeof actionsCore>();
-  return { ...actual, setFailed: setFailedMock, error: errorMock, warning: warningMock };
+  return { ...actual, setFailed: setFailedMock, error: errorMock, warning: warningMock, info: infoMock };
 });
+
+// #278: the upload-report=true scenario asserts against the artifact client's
+// upload method, mocked here exactly the way tests/unit/artifact.test.ts does.
+const { uploadArtifactMock } = vi.hoisted(() => ({ uploadArtifactMock: vi.fn() }));
+vi.mock("@actions/artifact", () => ({
+  DefaultArtifactClient: class {
+    uploadArtifact = uploadArtifactMock;
+  },
+}));
 
 // Keep resolveVersion's GitHub API call out of the network entirely: it
 // must degrade gracefully (see version.test.ts), and this suite only
@@ -95,6 +105,9 @@ function setUp(scenario: string): Fixture {
   setFailedMock.mockClear();
   errorMock.mockClear();
   warningMock.mockClear();
+  infoMock.mockClear();
+  uploadArtifactMock.mockReset();
+  uploadArtifactMock.mockResolvedValue({ id: 1, size: 100 });
 
   return { workDir, outputPath, summaryPath };
 }
@@ -119,7 +132,11 @@ function readOutputs(outputPath: string): Record<string, string> {
   return outputs;
 }
 
-describe("Action end-to-end (via mock-canary)", () => {
+// The fixture is an executable script without a Windows PE wrapper. The
+// platform-specific binary-name branch is covered by canary.test.ts; skip
+// this process-level fixture suite on Windows rather than falling through to
+// a real cargo install during CI.
+describe.skipIf(process.platform === "win32")("Action end-to-end (via mock-canary)", () => {
   let fixture: Fixture;
 
   afterEach(() => {
@@ -266,5 +283,90 @@ describe("Action end-to-end (via mock-canary)", () => {
     }
     // The summary should show 0 passed out of 60 total
     expect(summary).toContain("0/60 applicable checks passed");
+  });
+
+  // #277: every earlier scenario sets INPUT_ANNOTATIONS="true", so the
+  // `if (inputs.annotations)` guards in main.ts were never exercised
+  // end-to-end. This is the documented "annotations: false" configuration:
+  // a compatibility failure still fails the job and still writes the job
+  // summary, but emits no error/warning annotations at all.
+  it("fail with annotations=false: job still fails and the summary is written, but no annotation is emitted", async () => {
+    fixture = setUp("fail");
+    process.env["INPUT_ANNOTATIONS"] = "false";
+    const { run } = await import("../../src/main");
+    await run();
+
+    // The job still fails on the compatibility failure, exactly as with
+    // annotations on.
+    expect(setFailedMock).toHaveBeenCalledTimes(1);
+    expect(String(setFailedMock.mock.calls[0]?.[0])).toContain("fail");
+    const outputs = readOutputs(fixture.outputPath);
+    expect(outputs.status).toBe("fail");
+    expect(outputs.failures).toBe("1");
+
+    // The job summary is still written without annotations.
+    expect(fs.readFileSync(fixture.summaryPath, "utf8")).toContain("NOT READY");
+
+    // ...but no error/warning annotation is emitted for the failing check.
+    expect(errorMock).not.toHaveBeenCalled();
+    expect(warningMock).not.toHaveBeenCalled();
+  });
+
+  // #277, second case: with annotations disabled even an execution failure
+  // (config-error exits before any report exists) must skip
+  // emitExecutionFailureAnnotation, i.e. core.error is never called.
+  it("config-error with annotations=false: the execution-failure annotation is not emitted", async () => {
+    fixture = setUp("config-error");
+    process.env["INPUT_ANNOTATIONS"] = "false";
+    const { run } = await import("../../src/main");
+    await run();
+
+    expect(setFailedMock).toHaveBeenCalledTimes(1);
+    expect(String(setFailedMock.mock.calls[0]?.[0])).toContain("could not be executed");
+    expect(readOutputs(fixture.outputPath).status).toBe("execution-failed");
+    expect(fs.readFileSync(fixture.summaryPath, "utf8")).toContain("could not be executed");
+
+    // emitExecutionFailureAnnotation's underlying core.error is not called.
+    expect(errorMock).not.toHaveBeenCalled();
+    expect(warningMock).not.toHaveBeenCalled();
+  });
+
+  // #278: every earlier scenario sets INPUT_UPLOAD-REPORT="false", so the
+  // wiring from a completed run to uploadReport — including the
+  // artifactDifferentiator value derived from the inputs — was never
+  // exercised end-to-end. This is the only remaining branch of run() with
+  // zero integration coverage.
+  it("pass with upload-report=true: the artifact client uploads the produced report once", async () => {
+    fixture = setUp("pass");
+    process.env["INPUT_UPLOAD-REPORT"] = "true";
+    const { run } = await import("../../src/main");
+    await run();
+
+    // The run itself still succeeds.
+    expect(setFailedMock).not.toHaveBeenCalled();
+    expect(readOutputs(fixture.outputPath).status).toBe("pass");
+
+    // The artifact client's upload method was called exactly once, with the
+    // stable artifact name and the report file path the run produced.
+    expect(uploadArtifactMock).toHaveBeenCalledTimes(1);
+    const [name, files, rootDirectory] = uploadArtifactMock.mock.calls[0] as [string, string[], string];
+    expect(name).toBe("stellar-protocol-canary-report");
+    expect(files).toHaveLength(1);
+    const uploadedReportPath = files[0] as string;
+    expect(path.isAbsolute(uploadedReportPath)).toBe(true);
+    expect(fs.existsSync(uploadedReportPath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(uploadedReportPath, "utf8"))).toMatchObject({ status: "pass" });
+    expect(rootDirectory).toBe(path.dirname(uploadedReportPath));
+
+    // The same file the "report" output advertises is what got uploaded.
+    const outputs = readOutputs(fixture.outputPath);
+    expect(uploadedReportPath).toBe(outputs.report);
+
+    // The differentiator built from this scenario's inputs (protocol=28,
+    // no config) is the retry name only; the stable name is tried first, so
+    // the successful first call never needed it. Log it for debugging.
+    expect(infoMock.mock.calls.some((call) => String(call[0]).includes("Uploaded stellar-protocol-canary-report artifact."))).toBe(
+      true,
+    );
   });
 });

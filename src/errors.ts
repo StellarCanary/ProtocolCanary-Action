@@ -52,11 +52,6 @@ export class InvalidReportError extends CanaryActionError {
   readonly code = "InvalidReport";
 }
 
-/** Uploading the JSON report as a workflow artifact failed. */
-export class ArtifactUploadFailedError extends CanaryActionError {
-  readonly code = "ArtifactUploadFailed";
-}
-
 /** Publishing the GitHub job summary failed. */
 export class SummaryPublishFailedError extends CanaryActionError {
   readonly code = "SummaryPublishFailed";
