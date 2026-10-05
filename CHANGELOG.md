@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Execution-failure job summaries no longer break when the raw diagnostic
+  (Canary's stderr, a timeout notice) itself contains a ``` sequence, e.g.
+  a compiler or panic message quoting a code block: the diagnostic fence is
+  now made longer than the longest backtick run the diagnostic contains, so
+  the diagnostic still renders as a single well-formed code block instead of
+  closing the fence early and spilling broken markdown into the summary
+  ([#269]).
+
 ### Documentation
 
 - README gains a "Troubleshooting" section mapping the most common
@@ -105,6 +115,11 @@ All notable changes to this project are documented in this file.
   40-character commit SHA for the matching tag from the GitHub tags API,
   including that the SHA comes from the matching entry rather than the first
   one ([#192]).
+- Added unit coverage for `canary.ts`'s `cacheKeyFor`: one test pinning that
+  the Actions cache key uses `commitSha` even when a `tag` is also present
+  (so two commits under a moving tag can never share a cache entry), and one
+  pinning the `tag` fallback when no `commitSha` was resolved, observed
+  through the keys handed to the cache restore/save calls ([#228]).
 - Added unit coverage for `main.ts`'s `run()`: a run whose process is killed
   by a signal (null exit code) is reported as an execution failure naming the
   signal, and a `writeSummary` rejection on the otherwise-successful path

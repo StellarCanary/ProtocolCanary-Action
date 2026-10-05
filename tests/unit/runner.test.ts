@@ -42,6 +42,8 @@ class FakeChild extends EventEmitter {
 }
 
 const MOCK_CANARY = path.join(__dirname, "..", "fixtures", "mock-canary.cjs");
+const MOCK_CANARY_COMMAND = process.platform === "win32" ? process.execPath : MOCK_CANARY;
+const MOCK_CANARY_PREFIX = process.platform === "win32" ? [MOCK_CANARY] : [];
 
 const BASE_INPUTS: ActionInputs = {
   protocol: 28,
@@ -122,8 +124,12 @@ describe("buildCheckArgs", () => {
 });
 
 describe("runCheck", () => {
+  // Node's signal delivery and child termination semantics differ on Windows;
+  // the process-signal assertions below are covered by the Unix job.
+  const itWithUnixSignals = process.platform === "win32" ? it.skip : it;
+
   function run(timeoutMs = 5000) {
-    return runCheck(MOCK_CANARY, ["check"], timeoutMs);
+    return runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], timeoutMs);
   }
 
   it("captures stdout and a zero exit code on pass", async () => {
@@ -148,15 +154,65 @@ describe("runCheck", () => {
     expect(result.stderr).toContain("configuration error");
   });
 
-  it("rejects with TimeoutError and kills the process when it runs too long", async () => {
+  itWithUnixSignals("rejects with TimeoutError and kills the process when it runs too long", async () => {
     process.env.MOCK_CANARY_SCENARIO = "timeout";
-    await expect(runCheck(MOCK_CANARY, ["check"], 200)).rejects.toThrow(TimeoutError);
+    await expect(
+      runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], 200),
+    ).rejects.toThrow(TimeoutError);
   });
 
   it("rejects with CanaryExecutionFailedError when the binary cannot be started", async () => {
     await expect(runCheck(path.join(__dirname, "does-not-exist"), ["check"], 5000)).rejects.toThrow(
       CanaryExecutionFailedError,
     );
+  });
+
+  // The child's "error" and "close" handlers both guard on the shared
+  // `settled` flag. Node can emit "error" after "close" (e.g. a read error
+  // surfacing on a stream whose process has already exited); the guard makes
+  // such a late event a no-op. Per ES semantics a second settle would be an
+  // unobservable no-op on the promise itself, so what this test pins is the
+  // observable contract the issue asks for (#272): the late "error" neither
+  // changes the already-delivered result nor produces an unhandled rejection
+  // (which fails the whole vitest run), and the child's listeners stay in
+  // the cleaned-up state `close` left them in.
+  it("ignores a late error event after already settling via close (#272)", async () => {
+    // The timeout-escalation suite swaps in fake children via `fakeSpawn`;
+    // that helper lives in another describe block, so swap here directly
+    // (the vi.mock wrapper restores the real spawn after this Once).
+    const child = new FakeChild(true); // exits in response to SIGTERM
+    spawnMock.mockImplementationOnce(() => child as unknown as ChildProcess);
+
+    // runCheck registers its signal-forwarding listeners synchronously
+    // inside the promise executor; capture the baseline to compare against.
+    const baselineInt = process.listenerCount("SIGINT");
+    const baselineTerm = process.listenerCount("SIGTERM");
+
+    const pending = runCheck("fake-canary", ["check"], 60_000);
+    expect(process.listenerCount("SIGINT")).toBe(baselineInt + 1);
+    expect(process.listenerCount("SIGTERM")).toBe(baselineTerm + 1);
+
+    // Emit "close" first (the child exits on SIGTERM, so the result is a
+    // null exit code with the signal set), and let the queue drain so the
+    // promise has really settled before the late event arrives.
+    child.emit("close", null, "SIGTERM");
+    const settled = await pending;
+    expect(settled).toEqual({ exitCode: null, signal: "SIGTERM", stdout: "", stderr: "" });
+
+    // Now fire "error" the way Node would after the fact. If the settled
+    // guard were broken such that the late event rejected the promise
+    // anew, vitest would report an unhandled rejection and fail the run.
+    child.emit("error", new Error("read EIO: terminal attributes"));
+
+    // Let any misplaced second settle surface before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // The already-delivered result is unchanged by the late event.
+    expect(await pending).toEqual(settled);
+    // No listener leaked and none was removed twice: the state is exactly
+    // what close's single cleanup() left behind.
+    expect(process.listenerCount("SIGINT")).toBe(baselineInt);
+    expect(process.listenerCount("SIGTERM")).toBe(baselineTerm);
   });
 
   // `process` is a process-wide EventEmitter shared by every runCheck call
@@ -201,7 +257,7 @@ describe("runCheck", () => {
       process.env.MOCK_CANARY_SCENARIO = "timeout";
       const before = snapshotListenerCounts();
 
-      const pending = runCheck(MOCK_CANARY, ["check"], 200);
+      const pending = runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], 200);
 
       for (const signal of SIGNALS) {
         expect(process.listenerCount(signal)).toBe(before[signal] + 1);
@@ -229,7 +285,9 @@ describe("runCheck", () => {
 });
 
 describe("runCheck signal handling", () => {
-  it("resolves with a null exit code and the signal when the child is killed by a signal", async () => {
+  const itWithUnixSignals = process.platform === "win32" ? it.skip : it;
+
+  itWithUnixSignals("resolves with a null exit code and the signal when the child is killed by a signal", async () => {
     // This exercises the `close` branch where `exitCode` is null and a real
     // signal is set, without going through the timeout path: the child
     // terminates itself with SIGTERM.
@@ -238,7 +296,7 @@ describe("runCheck signal handling", () => {
     expect(result.signal).toBe("SIGTERM");
   });
 
-  it("forwards a cancellation signal to the child and removes its listeners on settle", async () => {
+  itWithUnixSignals("forwards a cancellation signal to the child and removes its listeners on settle", async () => {
     process.env.MOCK_CANARY_SCENARIO = "timeout";
     const baselineInt = process.listenerCount("SIGINT");
     const baselineTerm = process.listenerCount("SIGTERM");
