@@ -42,6 +42,8 @@ class FakeChild extends EventEmitter {
 }
 
 const MOCK_CANARY = path.join(__dirname, "..", "fixtures", "mock-canary.cjs");
+const MOCK_CANARY_COMMAND = process.platform === "win32" ? process.execPath : MOCK_CANARY;
+const MOCK_CANARY_PREFIX = process.platform === "win32" ? [MOCK_CANARY] : [];
 
 const BASE_INPUTS: ActionInputs = {
   protocol: 28,
@@ -122,8 +124,12 @@ describe("buildCheckArgs", () => {
 });
 
 describe("runCheck", () => {
+  // Node's signal delivery and child termination semantics differ on Windows;
+  // the process-signal assertions below are covered by the Unix job.
+  const itWithUnixSignals = process.platform === "win32" ? it.skip : it;
+
   function run(timeoutMs = 5000) {
-    return runCheck(MOCK_CANARY, ["check"], timeoutMs);
+    return runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], timeoutMs);
   }
 
   it("captures stdout and a zero exit code on pass", async () => {
@@ -148,9 +154,11 @@ describe("runCheck", () => {
     expect(result.stderr).toContain("configuration error");
   });
 
-  it("rejects with TimeoutError and kills the process when it runs too long", async () => {
+  itWithUnixSignals("rejects with TimeoutError and kills the process when it runs too long", async () => {
     process.env.MOCK_CANARY_SCENARIO = "timeout";
-    await expect(runCheck(MOCK_CANARY, ["check"], 200)).rejects.toThrow(TimeoutError);
+    await expect(
+      runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], 200),
+    ).rejects.toThrow(TimeoutError);
   });
 
   it("rejects with CanaryExecutionFailedError when the binary cannot be started", async () => {
@@ -201,7 +209,7 @@ describe("runCheck", () => {
       process.env.MOCK_CANARY_SCENARIO = "timeout";
       const before = snapshotListenerCounts();
 
-      const pending = runCheck(MOCK_CANARY, ["check"], 200);
+      const pending = runCheck(MOCK_CANARY_COMMAND, [...MOCK_CANARY_PREFIX, "check"], 200);
 
       for (const signal of SIGNALS) {
         expect(process.listenerCount(signal)).toBe(before[signal] + 1);
@@ -229,7 +237,9 @@ describe("runCheck", () => {
 });
 
 describe("runCheck signal handling", () => {
-  it("resolves with a null exit code and the signal when the child is killed by a signal", async () => {
+  const itWithUnixSignals = process.platform === "win32" ? it.skip : it;
+
+  itWithUnixSignals("resolves with a null exit code and the signal when the child is killed by a signal", async () => {
     // This exercises the `close` branch where `exitCode` is null and a real
     // signal is set, without going through the timeout path: the child
     // terminates itself with SIGTERM.
@@ -238,7 +248,7 @@ describe("runCheck signal handling", () => {
     expect(result.signal).toBe("SIGTERM");
   });
 
-  it("forwards a cancellation signal to the child and removes its listeners on settle", async () => {
+  itWithUnixSignals("forwards a cancellation signal to the child and removes its listeners on settle", async () => {
     process.env.MOCK_CANARY_SCENARIO = "timeout";
     const baselineInt = process.listenerCount("SIGINT");
     const baselineTerm = process.listenerCount("SIGTERM");
