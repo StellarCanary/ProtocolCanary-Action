@@ -52,16 +52,20 @@ export class InvalidReportError extends CanaryActionError {
   readonly code = "InvalidReport";
 }
 
-/** Uploading the JSON report as a workflow artifact failed. */
-export class ArtifactUploadFailedError extends CanaryActionError {
-  readonly code = "ArtifactUploadFailed";
-}
-
 /** Publishing the GitHub job summary failed. */
 export class SummaryPublishFailedError extends CanaryActionError {
   readonly code = "SummaryPublishFailed";
 }
 
+/**
+ * Narrows an unknown thrown value to a {@link CanaryActionError}. `main.ts`
+ * uses this to distinguish an error this Action raised deliberately (which
+ * carries a typed `code` and a safe, user-facing message) from any other
+ * value that merely happened to be thrown, which must instead be routed
+ * through `describeError`. Reuse this guard rather than re-checking
+ * `instanceof CanaryActionError` inline, so the public error-handling
+ * contract stays defined in one place.
+ */
 export function isCanaryActionError(error: unknown): error is CanaryActionError {
   return error instanceof CanaryActionError;
 }

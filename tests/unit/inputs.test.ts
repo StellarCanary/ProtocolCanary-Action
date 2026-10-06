@@ -59,6 +59,14 @@ describe("getInputs", () => {
     expect(() => getInputs()).toThrow(InvalidInputError);
   });
 
+  it("rejects a negative protocol", () => {
+    // A negative value is a plausible typo (array index / off-by-one) and a
+    // different input shape than a non-numeric string, so lock in that
+    // PROTOCOL_LIKE's digits-only anchor rejects it too.
+    process.env.INPUT_PROTOCOL = "-1";
+    expect(() => getInputs()).toThrow(InvalidInputError);
+  });
+
   it("rejects a config path that does not exist", () => {
     process.env.INPUT_CONFIG = "/nonexistent/.stellar-canary.toml";
     expect(() => getInputs()).toThrow(ConfigNotFoundError);
@@ -79,25 +87,48 @@ describe("getInputs", () => {
       // The value forwarded to the CLI as --config must be exactly the path
       // the existence check validated, not the string as written.
       expect(inputs.config).toBe(configPath);
-      expect(inputs.config).not.toBe(relative);
+      // GitHub-hosted Windows runners can check the repository out on a
+      // different drive from the system temp directory. In that case
+      // path.relative returns an absolute path, so comparing it with the raw
+      // value is not a portable way to prove resolution occurred.
+      const resolvedConfig = inputs.config;
+      expect(resolvedConfig).toBe(path.resolve(relative));
+      if (resolvedConfig === undefined) {
+        throw new Error("Expected the validated config path to be present.");
+      }
+      expect(path.isAbsolute(resolvedConfig)).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("accepts a config path that exists but is a directory", () => {
-    // parseConfig validates with fs.existsSync, which is true for a directory
-    // just as much as for a file, so it does not reject this here. This test
-    // pins the current (permissive) behavior: a directory is accepted and
-    // only fails later inside the stellar-canary CLI, with a less specific
-    // error than ConfigNotFoundError would give up front.
+  it("rejects a config path that exists but is a directory", () => {
+    // parseConfig must require an actual file: forwarding a directory to the
+    // stellar-canary CLI only fails later, with a less specific error than
+    // ConfigNotFoundError/InvalidInputError would give up front. This test
+    // pins the strict (file-only) behavior.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "canary-config-dir-"));
     try {
       process.env.INPUT_CONFIG = dir;
-      expect(getInputs().config).toBe(dir);
+      expect(() => getInputs()).toThrow(InvalidInputError);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("trims surrounding whitespace from network", () => {
+    process.env.INPUT_NETWORK = "  testnet  ";
+    expect(getInputs().network).toBe("testnet");
+  });
+
+  it("trims surrounding whitespace from rpc-url", () => {
+    process.env["INPUT_RPC-URL"] = "  https://soroban-testnet.stellar.org  ";
+    expect(getInputs().rpcUrl).toBe("https://soroban-testnet.stellar.org");
+  });
+
+  it("treats an all-whitespace network as unset", () => {
+    process.env.INPUT_NETWORK = "   ";
+    expect(getInputs().network).toBeUndefined();
   });
 
   it("accepts an https rpc-url", () => {
@@ -108,6 +139,25 @@ describe("getInputs", () => {
   it("accepts http for localhost only", () => {
     process.env["INPUT_RPC-URL"] = "http://localhost:8000/soroban/rpc";
     expect(getInputs().rpcUrl).toBe("http://localhost:8000/soroban/rpc");
+  });
+
+  it("accepts http for 127.0.0.1", () => {
+    // The isLocalHttp branch permits plain http:// for IPv4 loopback too, so
+    // refactoring parseRpcUrl must keep this working alongside localhost.
+    process.env["INPUT_RPC-URL"] = "http://127.0.0.1:8000/soroban/rpc";
+    expect(getInputs().rpcUrl).toBe("http://127.0.0.1:8000/soroban/rpc");
+  });
+
+  it("rejects plain http for the IPv6 loopback [::1]", () => {
+    // Pins the current contract of isLocalHttp: the plain-http exemption
+    // matches only the literal hostnames "localhost" and "127.0.0.1", so
+    // the IPv6 loopback representation of the same machine is rejected even
+    // though it is a common way local Soroban RPC endpoints are addressed.
+    // This documents a known limitation rather than a regression; if IPv6
+    // loopback support is added intentionally later, update this test
+    // alongside that change.
+    process.env["INPUT_RPC-URL"] = "http://[::1]:8000/soroban/rpc";
+    expect(() => getInputs()).toThrow(InvalidInputError);
   });
 
   it("rejects plain http for a non-local host", () => {
@@ -153,5 +203,10 @@ describe("getInputs", () => {
   it("parses a valid timeout", () => {
     process.env["INPUT_TIMEOUT-MINUTES"] = "30";
     expect(getInputs().timeoutMinutes).toBe(30);
+  });
+
+  it("truncates a fractional timeout to an integer", () => {
+    process.env["INPUT_TIMEOUT-MINUTES"] = "15.9";
+    expect(getInputs().timeoutMinutes).toBe(15);
   });
 });

@@ -10,6 +10,24 @@ protocol compatibility testing a normal part of GitHub CI.
 
 [Documentation](https://stellarcanary.github.io/Protocol-Canary/) | [Protocol-Canary](https://github.com/StellarCanary/Protocol-Canary) | [Fixtures](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [Example workflow](#example-workflow)
+- [Inputs](#inputs)
+- [Outputs](#outputs)
+- [How failures appear](#how-failures-appear)
+- [Artifacts](#artifacts)
+- [Installation & integrity](#installation--integrity)
+- [Versioning](#versioning)
+- [Limitations](#limitations)
+- [Security](#security)
+- [Code of Conduct](#code-of-conduct)
+- [Maintainers & Community](#maintainers--community)
+- [Development](#development)
+- [License](#license)
+
 ## What it does
 
 This Action is a thin wrapper around the real `stellar-canary` CLI. It does
@@ -30,6 +48,22 @@ All compatibility logic lives in
 [`StellarCanary/Protocol-Canary`](https://github.com/StellarCanary/Protocol-Canary).
 Canonical fixtures live in
 [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures).
+
+## Prerequisites
+
+Before following the quick-start example, make sure the runner meets the
+requirements below:
+
+- A Rust/Cargo toolchain is available. This Action installs
+  `Protocol-Canary` from source with `cargo install --git`, so a
+  self-hosted or non-Ubuntu runner must install Rust first; GitHub-hosted
+  Ubuntu runners include Cargo by default.
+- The `version` input matches a real release tag in
+  `StellarCanary/Protocol-Canary`. It is pinned to a specific upstream
+  release and never tracks `main`.
+
+See [Installation & integrity](#installation--integrity) and the `version`
+entry in [Inputs](#inputs) for the full explanation and setup guidance.
 
 ## Quick start
 
@@ -81,7 +115,7 @@ jobs:
 | Input | Description | Default |
 |---|---|---|
 | `protocol` | Target Stellar protocol version (`--protocol`). | (from `.stellar-canary.toml`, or 28) |
-| `config` | Path to `.stellar-canary.toml` (`--config`). Fails clearly if the given path does not exist. | (CLI default lookup) |
+| `config` | Path to `.stellar-canary.toml` (`--config`). Fails clearly if the given path does not exist, or is not a regular file (e.g. a directory). | (CLI default lookup) |
 | `network` | Network for live RPC/Soroban checks (`--network`). | `testnet` (CLI default) |
 | `rpc-url` | Stellar RPC endpoint (`--rpc-url`). Must be `https://`, or `http://localhost`/`127.0.0.1` for local development. | (none) |
 | `fixtures-dir` | Path to a directory of fixtures, e.g. a checkout of `ProtocolCanary-Fixtures` (`--fixtures-dir`). | `fixtures` |
@@ -121,6 +155,8 @@ A concrete consumer, using the outputs to gate a follow-up step:
   if: steps.canary.outputs.status == 'fail'
   run: echo "${{ steps.canary.outputs.failures }} check(s) failed"
 
+> **Note:** When `status` is `execution-failed`, the numeric outputs (`passed`, `warnings`, `failures`, `errors`) are all explicitly set to the string `"0"`. They do **not** represent a real count of zero compatibility issues — they indicate that Canary never produced a report at all. Always check `status` first before relying on the counts.
+
 ## How failures appear
 
 The Action distinguishes two different kinds of "red":
@@ -139,11 +175,125 @@ A separate failure — the job summary itself failing to publish — is
 reported as "Failed to publish Canary summary," distinct from both of the
 above.
 
+### Annotation limits
+
+GitHub enforces a platform-level cap on how many annotations are surfaced
+in the UI per step and per workflow run, and silently drops any beyond
+that cap. This Action emits one annotation per failing, erroring, or
+warning result and does not batch or truncate, so a very large fixture set
+— or a run with many simultaneous failures — can produce more annotations
+than GitHub will display.
+
+That cap applies only to annotations. The job summary and the JSON report
+list every result regardless, so treat them, not the annotations, as the
+complete record of what Canary found. See GitHub's
+[workflow command documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands)
+for the platform's exact behavior.
+### What the job summary looks like
+
+The summary is rendered by `renderSummaryMarkdown` in
+[`src/summary.ts`](src/summary.ts). A passing run over three surfaces, with a
+network configured and one fixture skipped:
+
+```markdown
+## Stellar Protocol Canary
+
+Protocol: 28
+Project: my-soroban-contracts (soroban)
+Network: testnet — observed protocol 28
+Canary version: 0.1.1
+
+| Surface | Result |
+|---|---|
+| XDR | ✅ PASS (2/2) |
+| RPC | ✅ PASS (1/1) |
+| Soroban | ✅ PASS (1/1) |
+
+### Result
+
+✅ **PASS**
+
+4/4 applicable checks passed.
+
+<details><summary>Skipped fixtures</summary>
+
+- `p27-xdr-legacy` (xdr) — fixture targets protocol 27, this run targets protocol 28
+
+</details>
+```
+
+And a run with a failing check, a warning, and a check that could not complete:
+
+```markdown
+## Stellar Protocol Canary
+
+Protocol: 28
+Project: my-soroban-contracts (soroban)
+Network: testnet — observed protocol 28
+Canary version: 0.1.1
+
+| Surface | Result |
+|---|---|
+| XDR | ❌ FAIL (1/2) |
+| RPC | ⚠️ WARNING (0/1) |
+| Soroban | ❌ FAIL (0/1) |
+
+### Result
+
+❌ **NOT READY**
+
+1/4 applicable checks passed.
+
+#### Failures
+
+- `p28-xdr-cap85-002` (xdr) — transaction envelope metadata differs from the expected encoding
+  expected discriminant 3, found 2
+  at line 1, column 24
+- `p28-soroban-invoke-004` (soroban) — simulateInvoke could not reach the configured RPC endpoint
+  connect ETIMEDOUT 10.0.0.1:443
+
+#### Warnings
+
+- `p28-rpc-getledgerentries-003` (rpc) — RPC endpoint returned HTTP 429; result may be incomplete
+```
+
+When Canary could not be run at all, the summary says so explicitly instead —
+`renderExecutionFailureMarkdown`:
+
+````markdown
+## Stellar Protocol Canary
+
+### Result
+
+🚫 **ERROR**
+
+Protocol Canary could not be executed.
+
+Reason: Stellar Protocol Canary timed out after 900s and was terminated.
+
+```text
+(no diagnostic output)
+```
+````
+
+More examples — including the surface ordering, the skipped-fixtures block, and
+the no-results case — live in
+[`tests/unit/summary.test.ts`](tests/unit/summary.test.ts), which renders
+these fixtures through the same function.
+
 Annotations from this Action are workflow-level only: no fixture in the
 report schema carries a file/line location, so they appear in the
 workflow run's Checks output and logs, never inline on a pull request's
 file diff the way file-scoped annotations from other tools do. The Action
 never fabricates a location.
+
+**GitHub annotation limits:** GitHub Actions caps the number of annotations
+rendered per run (10 per step, 50 per job across error+warning combined).
+When a run produces more failing results than this limit, GitHub silently
+drops annotations past the cap. The job summary table and failure list
+generated by this Action **always include every result** from the full JSON
+report, regardless of annotation count. If you see fewer annotations than
+failures in the summary, this is why.
 
 ## Troubleshooting
 
@@ -167,7 +317,7 @@ what to do about each.
 | `Configuration file not found: <path>` | The `config` input names a file that does not exist. | Fix the path (it is resolved against the job's working directory) or check out the file before this step. |
 | `Failed to publish Canary summary.` | The GitHub job summary could not be written — an infrastructure problem, distinct from both failure kinds above. | Re-run the job; if it reproduces on a GitHub-hosted runner, file a bug with the run link. |
 
-`Invalid "…" input` messages (`protocol`, `rpc-url`, `version`,
+`Invalid "…" input` messages (`protocol`, `config`, `rpc-url`, `version`,
 `timeout-minutes`, and the boolean inputs) state the expected format in
 the message itself; see [Inputs](#inputs) for each input's accepted
 values.
@@ -236,6 +386,14 @@ workflow that does this with `dtolnay/rust-toolchain` ahead of invoking
 this Action. A successful build is cached (best-effort; never required for
 correctness) using `actions/cache`.
 
+This Action is also a JavaScript action, declared as `runs: using: node24`
+in `action.yml`, so the runner must additionally provide the Node 24
+Actions runtime. GitHub-hosted runners always satisfy this; a self-hosted
+runner needs an
+[Actions Runner](https://github.com/actions/runner/releases) version new
+enough to bundle Node 24 (v2.328.0 or later), or the step fails to start
+with an opaque runtime error before Canary is ever installed or run.
+
 ## Versioning
 
 This repository follows semver and publishes a floating `v1` tag pointing
@@ -269,6 +427,9 @@ Action and will be called out here explicitly.
 
 - This Action depends on a compatible `Protocol-Canary` release; see the
   version table above.
+- Only Protocol 28 has fixtures published upstream in
+  [`StellarCanary/ProtocolCanary-Fixtures`](https://github.com/StellarCanary/ProtocolCanary-Fixtures)
+  at this time.
 - Network-dependent checks (RPC, Soroban) can fail if the configured RPC
   endpoint is temporarily unavailable — that is a real result, not an
   Action bug.

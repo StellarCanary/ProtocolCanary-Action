@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 
 import { SummaryPublishFailedError } from "./errors";
-import { CanaryReport, OverallStatus, Surface } from "./output";
+import type { CanaryReport, OverallStatus, Surface } from "./output";
 
 const SURFACE_HEADINGS: Readonly<Record<Surface, string>> = {
   xdr: "XDR",
@@ -18,6 +18,10 @@ const OVERALL_LABEL: Readonly<Record<OverallStatus, string>> = {
   error: "🚫 **ERROR**",
 };
 
+/** Aggregates one surface's results into its summary table row. Returns
+ * `undefined` when no results match the surface, which is how
+ * `renderSummaryMarkdown` omits untouched surfaces (e.g. an offline run has
+ * no rpc/soroban rows) instead of fabricating a pass. */
 function surfaceRowLabel(results: CanaryReport["results"], surface: Surface): string | undefined {
   const forSurface = results.filter((r) => r.surface === surface);
   if (forSurface.length === 0) {
@@ -99,7 +103,38 @@ export function renderSummaryMarkdown(report: CanaryReport): string {
   return lines.join("\n");
 }
 
+/**
+ * Longest fenced code block the summary may embed, used to pick a fence
+ * length that is strictly longer than any run of backticks the embedded
+ * text itself contains. A fence is only closed by an equally long run at
+ * line start, so a run inside the content can never close a longer fence.
+ */
+const MAX_EMBEDDED_FENCE_LENGTH = 20;
+
+/**
+ * Markdown rendering of an execution failure — the "Canary could not run
+ * at all" case, distinct from a compatibility failure the report describes.
+ *
+ * The diagnostic is embedded verbatim inside a fenced code block, but it is
+ * raw text from an external process (stderr, a timeout notice), so it may
+ * itself contain ``` (e.g. a compiler/panic message quoting a code block).
+ * A fixed fence would be closed early by that sequence, and the rest of the
+ * diagnostic would render as broken markdown. The fence is therefore made
+ * longer than the longest backtick run the diagnostic contains — the exact
+ * strategy CommonMark §Fenced code blocks specifies for embedding such
+ * content.
+ */
 export function renderExecutionFailureMarkdown(reason: string, diagnostic: string): string {
+  const trimmed = diagnostic.trim();
+  // Longest run of backticks anywhere in the diagnostic, in characters.
+  // Also covers the closing fence the diagnostic text may already contain,
+  // because a closing fence of length n is itself a run of n backticks.
+  const longestRun = (trimmed.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  // A fence shorter than the diagnostic's longest run could be closed early
+  // by that run; one strictly longer cannot. 20 backticks of headroom also
+  // gives nested embedding (a summary quoted inside another code block) room.
+  const fenceLength = Math.max(3, longestRun + 1, MAX_EMBEDDED_FENCE_LENGTH);
+  const fence = "`".repeat(fenceLength);
   return [
     "## Stellar Protocol Canary",
     "",
@@ -111,12 +146,22 @@ export function renderExecutionFailureMarkdown(reason: string, diagnostic: strin
     "",
     `Reason: ${reason}`,
     "",
-    "```text",
-    diagnostic.trim() === "" ? "(no diagnostic output)" : diagnostic.trim(),
-    "```",
+    fence + "text",
+    trimmed === "" ? "(no diagnostic output)" : trimmed,
+    fence,
   ].join("\n");
 }
 
+/**
+ * Publishes `markdown` to the current GitHub Actions job summary.
+ *
+ * This wraps `core.summary.addRaw(markdown, true).write()`. If adding or
+ * writing the summary fails, it throws {@link SummaryPublishFailedError}
+ * with the underlying error message.
+ *
+ * @param markdown Markdown to append to the job summary.
+ * @throws {SummaryPublishFailedError} When summary publication fails.
+ */
 export async function writeSummary(markdown: string): Promise<void> {
   try {
     await core.summary.addRaw(markdown, true).write();

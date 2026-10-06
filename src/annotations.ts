@@ -1,8 +1,14 @@
 import * as core from "@actions/core";
 
-import { CanaryReport } from "./output";
+import type { CanaryReport } from "./output";
 
 const TITLE = "Stellar Protocol Canary";
+
+const STATUS_LABEL: Readonly<Record<string, string>> = {
+  fail: "compatibility failure",
+  error: "execution error",
+  warning: "warning",
+};
 
 /**
  * Converts fail/error/warning results into GitHub annotations. No fixture
@@ -14,7 +20,8 @@ const TITLE = "Stellar Protocol Canary";
  */
 export function emitAnnotations(report: CanaryReport): void {
   for (const result of report.results) {
-    const message = `[${result.surface}] ${result.testId}: ${result.summary}`;
+    const label = STATUS_LABEL[result.status] ?? result.status;
+    const message = `[${result.surface}] ${result.testId}: [${label}] ${result.summary}`;
     if (result.status === "fail" || result.status === "error") {
       core.error(message, { title: TITLE });
     } else if (result.status === "warning") {
@@ -23,6 +30,13 @@ export function emitAnnotations(report: CanaryReport): void {
   }
 }
 
+/**
+ * Emits a workflow-level error annotation when Canary could not be executed
+ * or did not produce a usable report. Use this for execution failures
+ * (install, process, timeout, or parse errors) instead of `emitAnnotations`,
+ * which annotates individual results from a report. Like `emitAnnotations`,
+ * this never attaches a file/line location.
+ */
 export function emitExecutionFailureAnnotation(reason: string): void {
   core.error(`Protocol Canary could not be executed: ${reason}`, { title: TITLE });
 }
