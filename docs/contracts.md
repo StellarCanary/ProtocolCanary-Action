@@ -24,7 +24,7 @@ shows the answer. None of the work below exists yet.
 Checked against `main` at `0f6caab` on 2026-10-09:
 
 - Inputs: `protocol`, `config`, `network`, `rpc-url`, `fixtures-dir`, `version`,
-  `upload-report`, `annotations`, `timeout-minutes`. Outputs: `status`, `passed`,
+  `upload-report`, `annotations`, `timeout-minutes` (and `allow-empty`, added after that commit). Outputs: `status`, `passed`,
   `warnings`, `failures`, `errors`, `report`.
 - The Action installs the engine with `cargo install --git --locked` pinned to
   the resolved commit, and verifies an installed binary against the engine

@@ -105,6 +105,18 @@ inputs:
     required: false
     default: "15"
 
+  allow-empty:
+    description: >-
+      Let a run that executes no checks pass. Protocol Canary 0.2.0 and newer
+      fail such a run (exit code 2: no fixture directory, no fixture files, or
+      every fixture skipped for the target protocol); set this to `true` only
+      when an empty run is intended. Forwarded as `--allow-empty` when the
+      resolved `version` is 0.2.0 or newer. With an older version it has no
+      effect, because those versions already pass an empty run and reject the
+      flag. Defaults to `false`.
+    required: false
+    default: "false"
+
 outputs:
   status:
     description: >-
