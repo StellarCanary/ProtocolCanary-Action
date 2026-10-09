@@ -226,6 +226,50 @@ describe.skipIf(process.platform === "win32")("Action end-to-end (via mock-canar
     expect(fs.readFileSync(fixture.summaryPath, "utf8")).toContain("could not be executed");
   });
 
+  // Maintainer decision D-02: after Protocol-Canary 0.1.1 a run that executes
+  // nothing exits 2 with the reason on stderr and no report. An Action pinned
+  // to such an engine must fail the job with that reason in front of the
+  // user, not a bare "invalid report" and never a pass.
+  it("empty-run: the engine's refusal reaches the job summary as an execution failure", async () => {
+    fixture = setUp("empty-run");
+    const { run } = await import("../../src/main");
+    await run();
+
+    expect(setFailedMock).toHaveBeenCalledTimes(1);
+    expect(String(setFailedMock.mock.calls[0]?.[0])).toContain("could not be executed");
+    const outputs = readOutputs(fixture.outputPath);
+    expect(outputs.status).toBe("execution-failed");
+    expect(outputs.passed).toBe("0");
+
+    const summary = fs.readFileSync(fixture.summaryPath, "utf8");
+    expect(summary).toContain("no checks ran");
+    expect(summary).toContain("the fixtures target protocol 28");
+    expect(summary).toContain("--allow-empty");
+    expect(summary).not.toMatch(/Status:? *PASS/i);
+  });
+
+  it("empty-run: the diagnostic is also the annotation text, so it appears on the run page", async () => {
+    fixture = setUp("empty-run");
+    const { run } = await import("../../src/main");
+    await run();
+
+    expect(errorMock).toHaveBeenCalled();
+    expect(errorMock.mock.calls.map((call) => String(call[0])).join("\n")).toContain("exit code 2");
+  });
+
+  // Additive report fields (`results[].source`, `skipped[].code`) must not
+  // trip the Action's validation, and the outcome is unchanged.
+  it("pass-with-result-source: additive result and skip fields are tolerated", async () => {
+    fixture = setUp("pass-with-result-source");
+    const { run } = await import("../../src/main");
+    await run();
+
+    expect(setFailedMock).not.toHaveBeenCalled();
+    const outputs = readOutputs(fixture.outputPath);
+    expect(outputs.status).toBe("pass");
+    expect(outputs.passed).toBe("2");
+  });
+
   it("rpc-error: a per-fixture execution error still produces a real report", async () => {
     fixture = setUp("rpc-error");
     const { run } = await import("../../src/main");
