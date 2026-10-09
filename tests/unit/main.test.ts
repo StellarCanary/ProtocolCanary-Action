@@ -100,6 +100,7 @@ const INPUTS: ActionInputs = {
   uploadReport: false,
   annotations: true,
   timeoutMinutes: 1,
+  allowEmpty: false,
 };
 
 const PASS_REPORT = report({
@@ -152,6 +153,21 @@ describe("run", () => {
 
     expect(runCheckMock).toHaveBeenCalledTimes(1);
     expect(runCheckMock).toHaveBeenCalledWith(BINARY_PATH, expect.arrayContaining(["check", "--format", "json"]), 60_000);
+  });
+
+  it("forwards --allow-empty only when the resolved engine supports it", async () => {
+    runCheckMock.mockResolvedValue({ exitCode: 0, signal: null, stdout: JSON.stringify(PASS_REPORT), stderr: "" });
+
+    getInputsMock.mockReturnValue({ ...INPUTS, version: "0.2.0", allowEmpty: true });
+    await run();
+    expect(runCheckMock.mock.calls[0]?.[1]).toContain("--allow-empty");
+
+    runCheckMock.mockClear();
+    infoMock.mockClear();
+    getInputsMock.mockReturnValue({ ...INPUTS, version: "0.1.1", allowEmpty: true });
+    await run();
+    expect(runCheckMock.mock.calls[0]?.[1]).not.toContain("--allow-empty");
+    expect(infoMock).toHaveBeenCalledWith(expect.stringContaining('"allow-empty" has no effect with Canary 0.1.1'));
   });
 
   // #65: run() derives the install bound from timeout-minutes and hands it to

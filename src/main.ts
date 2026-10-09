@@ -10,7 +10,7 @@ import { describeError, isCanaryActionError } from "./errors";
 import type { ActionInputs } from "./inputs";
 import { getInputs } from "./inputs";
 import { describeExitCode, parseReport } from "./output";
-import { buildCheckArgs, runCheck } from "./runner";
+import { buildCheckArgs, engineSupportsAllowEmpty, runCheck } from "./runner";
 import { renderExecutionFailureMarkdown, renderSummaryMarkdown, writeSummary } from "./summary";
 import { resolveVersion } from "./version";
 
@@ -101,12 +101,18 @@ export async function run(): Promise<void> {
     return;
   }
 
+  if (inputs.allowEmpty && !engineSupportsAllowEmpty(resolved.version)) {
+    core.info(
+      `"allow-empty" has no effect with Canary ${resolved.version}: that version already passes a run that executes nothing.`,
+    );
+  }
+
   core.info(`Protocol: ${inputs.protocol !== undefined ? String(inputs.protocol) : "(from configuration)"}`);
   core.info("Running compatibility checks...");
 
   let execution;
   try {
-    execution = await runCheck(installed.binaryPath, buildCheckArgs(inputs), inputs.timeoutMinutes * 60_000);
+    execution = await runCheck(installed.binaryPath, buildCheckArgs(inputs, resolved.version), inputs.timeoutMinutes * 60_000);
   } catch (error) {
     await handleExecutionFailure(describeError(error), "", inputs.annotations);
     return;

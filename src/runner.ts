@@ -32,7 +32,7 @@ export interface CheckExecutionResult {
  * annotations from, and running Canary a second time to get a different
  * format is explicitly out of scope (one invocation drives everything).
  */
-export function buildCheckArgs(inputs: ActionInputs): string[] {
+export function buildCheckArgs(inputs: ActionInputs, engineVersion?: string): string[] {
   const args = ["check", "--format", "json"];
 
   if (inputs.protocol !== undefined) {
@@ -48,8 +48,35 @@ export function buildCheckArgs(inputs: ActionInputs): string[] {
     args.push("--config", inputs.config);
   }
   args.push("--fixtures-dir", inputs.fixturesDir);
+  if (inputs.allowEmpty && engineSupportsAllowEmpty(engineVersion)) {
+    args.push("--allow-empty");
+  }
 
   return args;
+}
+
+/** The first engine release whose `check` accepts `--allow-empty`. Earlier
+ * releases already exit 0 on a run that executes nothing, so the flag is not
+ * needed there and would be rejected as an unknown argument. */
+const ALLOW_EMPTY_MIN_VERSION: readonly [number, number, number] = [0, 2, 0];
+
+/** True when `version` (a bare `x.y.z`) is `0.2.0` or newer. An unknown or
+ * unparseable version is treated as not supporting the flag, so the Action
+ * never passes an argument an older engine would reject. */
+export function engineSupportsAllowEmpty(version: string | undefined): boolean {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");
+  if (match === null) {
+    return false;
+  }
+  const parts = [Number(match[1]), Number(match[2]), Number(match[3])];
+  for (let i = 0; i < 3; i++) {
+    const min = ALLOW_EMPTY_MIN_VERSION[i] as number;
+    const part = parts[i] as number;
+    if (part !== min) {
+      return part > min;
+    }
+  }
+  return true;
 }
 
 const SIGNALS_TO_FORWARD: readonly NodeJS.Signals[] = ["SIGINT", "SIGTERM"];

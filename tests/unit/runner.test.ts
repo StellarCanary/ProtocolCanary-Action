@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CanaryExecutionFailedError, TimeoutError } from "../../src/errors";
 import type { ActionInputs } from "../../src/inputs";
-import { buildCheckArgs, runCheck } from "../../src/runner";
+import { buildCheckArgs, engineSupportsAllowEmpty, runCheck } from "../../src/runner";
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 
@@ -55,6 +55,7 @@ const BASE_INPUTS: ActionInputs = {
   uploadReport: true,
   annotations: true,
   timeoutMinutes: 15,
+  allowEmpty: false,
 };
 
 describe("buildCheckArgs", () => {
@@ -120,6 +121,51 @@ describe("buildCheckArgs", () => {
     // merged with adjacent flags or split by the shell.
     expect(args).toContain("testnet; rm -rf /");
     expect(args.some((a) => a.includes("--network testnet"))).toBe(false);
+  });
+});
+
+describe("allow-empty forwarding", () => {
+  it("is not passed unless the input is set", () => {
+    expect(buildCheckArgs(BASE_INPUTS, "0.2.0")).not.toContain("--allow-empty");
+  });
+
+  it("is passed to an engine that supports it", () => {
+    const args = buildCheckArgs({ ...BASE_INPUTS, allowEmpty: true }, "0.2.0");
+    expect(args).toEqual([
+      "check",
+      "--format",
+      "json",
+      "--protocol",
+      "28",
+      "--fixtures-dir",
+      "fixtures",
+      "--allow-empty",
+    ]);
+  });
+
+  it("is never passed to an engine that would reject it", () => {
+    expect(buildCheckArgs({ ...BASE_INPUTS, allowEmpty: true }, "0.1.1")).not.toContain("--allow-empty");
+  });
+
+  it("is not passed when the engine version is unknown", () => {
+    expect(buildCheckArgs({ ...BASE_INPUTS, allowEmpty: true })).not.toContain("--allow-empty");
+  });
+
+  it.each([
+    ["0.1.0", false],
+    ["0.1.1", false],
+    ["0.1.99", false],
+    ["0.2.0", true],
+    ["0.2.1", true],
+    ["0.10.0", true],
+    ["1.0.0", true],
+    ["", false],
+    ["v0.2.0", false],
+    ["0.2", false],
+    ["0.2.0-rc1", false],
+    [undefined, false],
+  ])("engineSupportsAllowEmpty(%j) is %s", (version, expected) => {
+    expect(engineSupportsAllowEmpty(version)).toBe(expected);
   });
 });
 

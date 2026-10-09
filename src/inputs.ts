@@ -14,6 +14,8 @@ export interface ActionInputs {
   readonly uploadReport: boolean;
   readonly annotations: boolean;
   readonly timeoutMinutes: number;
+  /** Pass `--allow-empty` to engines that support it (0.2.0 and newer). */
+  readonly allowEmpty: boolean;
 }
 
 const SEMVER_LIKE = /^\d+\.\d+\.\d+$/;
@@ -31,6 +33,7 @@ export function getInputs(): ActionInputs {
   const uploadReport = parseBoolean("upload-report", core.getInput("upload-report") || "true");
   const annotations = parseBoolean("annotations", core.getInput("annotations") || "true");
   const timeoutMinutes = parseTimeout(core.getInput("timeout-minutes") || "15");
+  const allowEmpty = parseBoolean("allow-empty", core.getInput("allow-empty") || "false");
 
   return {
     protocol,
@@ -42,6 +45,7 @@ export function getInputs(): ActionInputs {
     uploadReport,
     annotations,
     timeoutMinutes,
+    allowEmpty,
   };
 }
 

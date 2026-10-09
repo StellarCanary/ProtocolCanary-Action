@@ -17,6 +17,7 @@ const INPUT_KEYS = [
   "INPUT_UPLOAD-REPORT",
   "INPUT_ANNOTATIONS",
   "INPUT_TIMEOUT-MINUTES",
+  "INPUT_ALLOW-EMPTY",
 ];
 
 function clearInputs(): void {
@@ -41,6 +42,7 @@ describe("getInputs", () => {
       uploadReport: true,
       annotations: true,
       timeoutMinutes: 15,
+      allowEmpty: false,
     });
   });
 
@@ -208,5 +210,24 @@ describe("getInputs", () => {
   it("truncates a fractional timeout to an integer", () => {
     process.env["INPUT_TIMEOUT-MINUTES"] = "15.9";
     expect(getInputs().timeoutMinutes).toBe(15);
+  });
+
+  it("defaults allow-empty to false", () => {
+    expect(getInputs().allowEmpty).toBe(false);
+  });
+
+  it.each([
+    ["true", true],
+    ["TRUE", true],
+    ["false", false],
+    ["False", false],
+  ])("parses allow-empty %s", (value, expected) => {
+    process.env["INPUT_ALLOW-EMPTY"] = value;
+    expect(getInputs().allowEmpty).toBe(expected);
+  });
+
+  it("rejects an undocumented allow-empty form and names the input", () => {
+    process.env["INPUT_ALLOW-EMPTY"] = "1";
+    expect(() => getInputs()).toThrow(/"allow-empty"/);
   });
 });
