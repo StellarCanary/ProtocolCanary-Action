@@ -468,6 +468,10 @@ pull requests on this repository.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Interfaces shared with the other two repositories (report, lockfile,
+comparison, fixture releases, project roots) are specified in
+[`docs/contracts.md`](docs/contracts.md).
+
 ## License
 
 [Apache-2.0](LICENSE)
