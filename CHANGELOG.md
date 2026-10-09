@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `allow-empty` input (default `false`). It forwards `--allow-empty` to Protocol-Canary
+  `0.2.0` and newer, which fail a run that executes no checks. With an older `version`
+  the flag is not forwarded, because those versions already pass an empty run and would
+  reject the argument; a note is logged. The default `version` is unchanged (`0.1.1`),
+  so existing workflows behave exactly as before.
+- `tests/integration/real-engine.test.ts` and the manual workflow `engine-compat.yml`
+  run the Action against real Protocol-Canary builds instead of the mock engine.
+
 ### Fixed
 
 - Execution-failure job summaries no longer break when the raw diagnostic

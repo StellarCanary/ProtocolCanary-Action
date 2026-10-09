@@ -1,0 +1,7 @@
+version = 1
+protocol = 28
+
+[tests]
+xdr = true
+rpc = false
+soroban = false
