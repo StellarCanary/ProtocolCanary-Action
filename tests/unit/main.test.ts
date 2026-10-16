@@ -98,6 +98,8 @@ const INPUTS: ActionInputs = {
   fixturesDir: "fixtures",
   version: "0.1.0",
   uploadReport: false,
+  fixturesPackVersion: "0.1.0",
+  fixturesPackProtocol: 28,
   annotations: true,
   timeoutMinutes: 1,
   allowEmpty: false,

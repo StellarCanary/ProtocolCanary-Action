@@ -12,6 +12,7 @@ export const SUPPORTED_SCHEMA_VERSION = 1;
 export type Surface = "xdr" | "rpc" | "soroban";
 export type ResultStatus = "pass" | "warning" | "fail" | "error" | "skipped";
 export type OverallStatus = "pass" | "warning" | "fail" | "error";
+export type CoverageState = "full" | "partial" | "none";
 
 export interface CanaryResult {
   readonly testId: string;
@@ -49,6 +50,7 @@ export interface CanaryReport {
   readonly counts: CanaryCounts;
   readonly results: readonly CanaryResult[];
   readonly skipped?: readonly CanarySkip[];
+  readonly coverageState: CoverageState;
   readonly git: {
     readonly commit: string | null;
     readonly branch: string | null;
@@ -223,10 +225,23 @@ export function parseReport(stdout: string): CanaryReport {
       );
     }
   }
-  const skipped = report.skipped as CanarySkip[] | undefined;
+  const skipped: readonly CanarySkip[] | undefined = report.skipped as readonly CanarySkip[] | undefined;
+  // Derive coverage state from results and skipped fixtures.
+  let coverageState: CoverageState = "full";
+  const hasResults = results.length > 0;
+  const hasSkipped = skipped !== undefined && skipped.length > 0;
+  if (!hasResults && hasSkipped) {
+    coverageState = "none";
+  } else if (!hasResults && !hasSkipped) {
+    coverageState = "none";
+  } else if (hasResults && hasSkipped) {
+    coverageState = "partial";
+  } else if (hasResults && !hasSkipped) {
+    coverageState = "full";
+  }
   const counts = isCountsShape(report.counts) ? report.counts : deriveCounts(results, skipped);
 
-  return { ...report, results, skipped, counts } as CanaryReport;
+  return { ...report, results, skipped, counts, coverageState } as CanaryReport;
 }
 
 export type ExitCodeCategory =

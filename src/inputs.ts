@@ -16,6 +16,10 @@ export interface ActionInputs {
   readonly timeoutMinutes: number;
   /** Pass `--allow-empty` to engines that support it (0.2.0 and newer). */
   readonly allowEmpty: boolean;
+  /** Version of the fixtures pack to use, formatted as a semver-like x.y.z. */
+  readonly fixturesPackVersion: string;
+  /** Protocol version for the fixtures pack, as a positive integer. */
+  readonly fixturesPackProtocol: number;
 }
 
 const SEMVER_LIKE = /^\d+\.\d+\.\d+$/;
@@ -34,6 +38,8 @@ export function getInputs(): ActionInputs {
   const annotations = parseBoolean("annotations", core.getInput("annotations") || "true");
   const timeoutMinutes = parseTimeout(core.getInput("timeout-minutes") || "15");
   const allowEmpty = parseBoolean("allow-empty", core.getInput("allow-empty") || "false");
+  const fixturesPackVersion = parseFixturesPackVersion(core.getInput("fixtures-pack-version") || "0.1.0");
+  const fixturesPackProtocol = parseFixturesPackProtocol(core.getInput("fixtures-pack-protocol") || "28");
 
   return {
     protocol,
@@ -46,6 +52,8 @@ export function getInputs(): ActionInputs {
     annotations,
     timeoutMinutes,
     allowEmpty,
+    fixturesPackVersion,
+    fixturesPackProtocol,
   };
 }
 
@@ -172,6 +180,33 @@ function parseTimeout(raw: string): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new InvalidInputError(
       `Invalid "timeout-minutes" input: ${JSON.stringify(raw)}. Expected a positive integer.`,
+    );
+  }
+  return value;
+}
+
+/** Validates the "fixtures-pack-version" input as a semver-like x.y.z.
+ * Throws {@link InvalidInputError} for anything else.
+ */
+function parseFixturesPackVersion(raw: string): string {
+  const value = raw.trim().replace(/^v/i, "");
+  const SEMVER_LIKE = /^\d+\.\d+\.\d+$/;
+  if (!SEMVER_LIKE.test(value)) {
+    throw new InvalidInputError(
+      `Invalid "fixtures-pack-version" input: ${JSON.stringify(raw)}. Expected a semantic version, e.g. "0.1.0".`,
+    );
+  }
+  return value;
+}
+
+/** Validates the "fixtures-pack-protocol" input as a positive integer.
+ * Throws {@link InvalidInputError} for zero, negative, or non-numeric input.
+ */
+function parseFixturesPackProtocol(raw: string): number {
+  const value = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new InvalidInputError(
+      `Invalid "fixtures-pack-protocol" input: ${JSON.stringify(raw)}. Expected a positive integer.`,
     );
   }
   return value;

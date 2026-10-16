@@ -31,6 +31,7 @@ export function report(resultsOrOverrides: CanaryResult[] | Partial<CanaryReport
     counts: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 },
     results: [],
     git: { commit: null, branch: null, isDirty: null },
+    coverageState: "full",
   };
   if (Array.isArray(resultsOrOverrides)) {
     const results = resultsOrOverrides;

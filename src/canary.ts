@@ -42,6 +42,28 @@ function binaryName(): string {
   return process.platform === "win32" ? "stellar-canary.exe" : "stellar-canary";
 }
 
+/** Searches the system PATH for a stellar-canary binary. Returns the first match found, or undefined. */
+function findInPath(): string | undefined {
+  const pathEnv = process.env.PATH ?? "";
+  const pathSections = pathEnv.split(path.delimiter);
+  for (const section of pathSections) {
+    const candidate = path.join(section, binaryName());
+    try {
+      if (fs.existsSync(candidate)) {
+        // Verify the file has execute permission
+        const stat = fs.statSync(candidate);
+        if (stat.mode & 0o111) {
+          return candidate;
+        }
+      }
+    } catch {
+      // Not a valid binary or permission issue, continue searching
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /** Asset names a Protocol-Canary release is expected to use for its
  * checksum manifest (for example `SHA256SUMS` or `checksums.txt`). */
 const CHECKSUM_ASSET_PATTERN = /(sha-?256|sha-?512|checksums?|shasums?)/i;
@@ -253,15 +275,36 @@ async function getInstalledVersion(binaryPath: string): Promise<string | undefin
  * than running the wrong Canary.
  */
 async function findExisting(resolved: ResolvedVersion): Promise<InstalledCanary | undefined> {
-  const candidatePath = path.join(cargoBinDir(), binaryName());
-  if (!fs.existsSync(candidatePath)) {
-    return undefined;
+  // First, try the cargo bin directory (highest priority)
+  const cargoCandidatePath = path.join(cargoBinDir(), binaryName());
+  if (fs.existsSync(cargoCandidatePath)) {
+    const version = await getInstalledVersion(cargoCandidatePath);
+    if (version === resolved.version) {
+      core.info(`Found stellar-canary ${version} already installed at ${cargoCandidatePath}.`);
+      return { binaryPath: cargoCandidatePath, version };
+    }
   }
-  const version = await getInstalledVersion(candidatePath);
-  if (version === resolved.version) {
-    core.info(`Found stellar-canary ${version} already installed at ${candidatePath}.`);
-    return { binaryPath: candidatePath, version };
+
+  // Then, try the system PATH as a fallback (lower priority)
+  const pathBinary = findInPath();
+  if (pathBinary !== undefined) {
+    const version = await getInstalledVersion(pathBinary);
+    if (version === resolved.version) {
+      // Verify executable permissions
+      try {
+        const stat = fs.statSync(pathBinary);
+        if (!(stat.mode & 0o111)) {
+          core.debug(`Binary at ${pathBinary} lacks execute permission.`);
+          return undefined;
+        }
+      } catch {
+        // If we can't stat the file, fall through to download
+      }
+      core.info(`Found stellar-canary ${version} on PATH at ${pathBinary}.`);
+      return { binaryPath: pathBinary, version };
+    }
   }
+
   return undefined;
 }
 

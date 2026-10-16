@@ -165,6 +165,7 @@ export async function run(): Promise<void> {
   core.setOutput("failures", String(report.counts.failed));
   core.setOutput("errors", String(report.counts.errors));
   core.setOutput("report", reportPath);
+  core.setOutput("coverage-state", report.coverageState);
 
   if (inputs.uploadReport) {
     await uploadReport(reportPath, artifactDifferentiator(inputs));

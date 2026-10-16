@@ -18,6 +18,32 @@ const OVERALL_LABEL: Readonly<Record<OverallStatus, string>> = {
   error: "🚫 **ERROR**",
 };
 
+const MAX_SUMMARY_BYTES = 1_000_000;
+
+/** Truncate a string to fit within maxBytes UTF-8 bytes, returning the truncated
+ * string postfixed with a warning notice if truncation occurred. */
+function truncateToBytes(text: string, maxBytes: number): { truncated: string; truncatedBytes: number; notice: string } {
+  const encoder = new TextEncoder();
+  const byteText = encoder.encode(text);
+  if (byteText.length <= maxBytes) {
+    return { truncated: text, truncatedBytes: byteText.length, notice: "" };
+  }
+  // Truncate from the end, leaving room for the notice
+  let truncated = text;
+  const notice = "... [truncated] ";
+  const noticeBytes = encoder.encode(notice);
+  // Iteratively reduce text length until it fits
+  while (encoder.encode(truncated).length + noticeBytes.length > maxBytes && truncated.length > 0) {
+    truncated = truncated.slice(0, -1);
+  }
+  const finalBytes = encoder.encode(truncated);
+  return {
+    truncated: truncated + notice,
+    truncatedBytes: finalBytes.length,
+    notice: notice,
+  };
+}
+
 /** Aggregates one surface's results into its summary table row. Returns
  * `undefined` when no results match the surface, which is how
  * `renderSummaryMarkdown` omits untouched surfaces (e.g. an offline run has
@@ -100,7 +126,9 @@ export function renderSummaryMarkdown(report: CanaryReport): string {
     );
   }
 
-  return lines.join("\n");
+  const rawMarkdown = lines.join("\n");
+  const { truncated: truncatedMarkdown, notice } = truncateToBytes(rawMarkdown, MAX_SUMMARY_BYTES);
+  return truncatedMarkdown + notice;
 }
 
 /**

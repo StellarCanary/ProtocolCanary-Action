@@ -53,6 +53,8 @@ const BASE_INPUTS: ActionInputs = {
   fixturesDir: "fixtures",
   version: "0.1.0",
   uploadReport: true,
+  fixturesPackVersion: "0.1.0",
+  fixturesPackProtocol: 28,
   annotations: true,
   timeoutMinutes: 15,
   allowEmpty: false,
