@@ -52,6 +52,14 @@ export class InvalidReportError extends CanaryActionError {
   readonly code = "InvalidReport";
 }
 
+/**
+ * The report-validation failure named by the report contract. It is the
+ * concrete error `parseReport` throws; it subclasses
+ * {@link InvalidReportError} so the historical name (and its `InvalidReport`
+ * code) keeps working for callers that catch the broader class.
+ */
+export class ReportValidationError extends InvalidReportError {}
+
 /** Publishing the GitHub job summary failed. */
 export class SummaryPublishFailedError extends CanaryActionError {
   readonly code = "SummaryPublishFailed";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InvalidReportError } from "../../src/errors";
+import { InvalidReportError, ReportValidationError } from "../../src/errors";
 import { describeExitCode, parseReport } from "../../src/output";
 import { report, result } from "./helpers";
 
@@ -251,6 +251,66 @@ describe("parseReport", () => {
   it("rejects a skipped field that is present but not an array", () => {
     const report = { ...RESULT_FIXTURE, skipped: "none" };
     expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+  });
+
+  // #358: truncated or non-standard engine output must fail as a typed
+  // report-validation error, never escape as a TypeError from a later
+  // property access. `ReportValidationError` is the contract name; it
+  // subclasses InvalidReportError so existing catch sites keep working.
+  describe("report validation error branches (#358)", () => {
+    function expectValidationError(output: string, message: RegExp): void {
+      expect(() => parseReport(output)).toThrow(ReportValidationError);
+      expect(() => parseReport(output)).toThrow(message);
+      try {
+        parseReport(output);
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidReportError);
+        expect((error as ReportValidationError).code).toBe("InvalidReport");
+      }
+    }
+
+    it("rejects an empty report object as missing schemaVersion", () => {
+      expectValidationError("{}", /schemaVersion/);
+    });
+
+    it("rejects a truncated report with an opening brace only", () => {
+      expectValidationError('{"schemaVersion": 1, "status": "pass"', /could not be parsed as JSON/);
+    });
+
+    it("rejects a report whose checks/results array is missing", () => {
+      const { results: _results, ...withoutResults } = RESULT_FIXTURE;
+      expectValidationError(JSON.stringify(withoutResults), /documented report shape/);
+    });
+
+    it("rejects a report whose checks/results field is null", () => {
+      expectValidationError(JSON.stringify({ ...RESULT_FIXTURE, results: null }), /documented report shape/);
+    });
+
+    it("rejects an empty-string results field", () => {
+      expectValidationError(JSON.stringify({ ...RESULT_FIXTURE, results: "" }), /documented report shape/);
+    });
+
+    it("rejects a JSON array of reports, which is not a report object", () => {
+      expectValidationError(JSON.stringify([RESULT_FIXTURE]), /schemaVersion/);
+    });
+
+    it("accepts a well-formed empty report (zero checks) without throwing", () => {
+      const empty = parseReport(
+        JSON.stringify({ ...RESULT_FIXTURE, results: [], counts: undefined, status: "pass" }),
+      );
+      expect(empty.results).toEqual([]);
+      expect(empty.counts).toEqual({ total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 });
+    });
+
+    it("does not reject malformed timestamp-like metadata, which the Action does not use", () => {
+      // Older/newer engines may add provenance timestamps. They are carried
+      // through untouched rather than validated, so a malformed value can
+      // never turn a real compatibility result into an execution failure.
+      const parsed = parseReport(
+        JSON.stringify({ ...RESULT_FIXTURE, timestamp: "not-a-date", generatedAt: 42, startedAt: null }),
+      );
+      expect(parsed.status).toBe("pass");
+    });
   });
 });
 

@@ -5,6 +5,7 @@ import {
   TimeoutError,
   CanaryExecutionFailedError,
   InvalidReportError,
+  ReportValidationError,
   InvalidInputError,
   describeError,
   isCanaryActionError,
@@ -31,6 +32,15 @@ describe("CanaryActionError hierarchy", () => {
 
   it("sets the InvalidReportError code", () => {
     expect(new InvalidReportError("boom").code).toBe("InvalidReport");
+  });
+
+  it("ReportValidationError is the typed report-validation failure (#358)", () => {
+    const error = new ReportValidationError("bad report");
+    expect(error.name).toBe("ReportValidationError");
+    // The historical `InvalidReport` code is preserved so existing handling
+    // and log consumers keep working.
+    expect(error.code).toBe("InvalidReport");
+    expect(error).toBeInstanceOf(InvalidReportError);
   });
 
   it("isCanaryActionError distinguishes typed errors from arbitrary errors", () => {

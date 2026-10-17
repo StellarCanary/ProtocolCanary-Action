@@ -158,6 +158,44 @@ describe("renderSummaryMarkdown", () => {
     expect(markdown).toContain("0/0 applicable checks passed.");
   });
 
+  // #358: an empty (or truncated to empty) checks array must render without
+  // dividing by zero or inventing a surface result, and must never emit
+  // "NaN" or "Infinity" into the job summary.
+  it("renders an empty checks array without NaN or division by zero (#358)", () => {
+    const markdown = renderSummaryMarkdown(
+      report({
+        status: "pass",
+        results: [],
+        counts: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 },
+      }),
+    );
+    expect(markdown).toContain("0/0 applicable checks passed.");
+    expect(markdown).not.toMatch(/NaN|Infinity/);
+    expect(markdown).not.toContain("| XDR |");
+  });
+
+  it("renders a failure status with an empty checks array (#358)", () => {
+    const markdown = renderSummaryMarkdown(
+      report({ status: "fail", results: [], counts: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0, skipped: 0 } }),
+    );
+    expect(markdown).toContain("❌ **NOT READY**");
+    expect(markdown).not.toMatch(/NaN|Infinity/);
+  });
+
+  it("ignores malformed timestamp-like report metadata (#358)", () => {
+    const markdown = renderSummaryMarkdown(
+      report({
+        // Extra provenance fields an engine may add; the renderer must not
+        // read or stringify them into the summary (and must not throw).
+        ...({ timestamp: "not-a-date", generatedAt: 0 } as object),
+        results: [result({ testId: "a", surface: "xdr", fixtureId: "a" })],
+      }),
+    );
+    expect(markdown).toContain("| XDR | ✅ PASS (1/1) |");
+    expect(markdown).not.toContain("not-a-date");
+    expect(markdown).not.toMatch(/NaN|Invalid Date/);
+  });
+
   // notablyList(report, ["fail", "error"]) drives the Failures section and
   // notablyList(report, ["warning"]) the Warnings section; these tests pin
   // the status filter between them. A regression that let any status through

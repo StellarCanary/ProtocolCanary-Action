@@ -1,4 +1,4 @@
-import { InvalidReportError } from "./errors";
+import { ReportValidationError } from "./errors";
 
 /**
  * The JSON report shape produced by `stellar-canary check --format json`,
@@ -157,34 +157,34 @@ function deriveCounts(results: readonly CanaryResult[], skipped: readonly Canary
 
 /**
  * Parses Canary's stdout as a report matching the documented schema.
- * Throws {@link InvalidReportError} if the text is not JSON, is not
+ * Throws {@link ReportValidationError} if the text is not JSON, is not
  * shaped like a report, or declares an unsupported `schemaVersion`.
  */
 export function parseReport(stdout: string): CanaryReport {
   const trimmed = stdout.trim();
   if (trimmed === "") {
-    throw new InvalidReportError("Canary produced no output to parse as a JSON report.");
+    throw new ReportValidationError("Canary produced no output to parse as a JSON report.");
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed);
   } catch (error) {
-    throw new InvalidReportError(
+    throw new ReportValidationError(
       `Canary's output could not be parsed as JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
   if (typeof parsed !== "object" || parsed === null) {
-    throw new InvalidReportError("Canary's JSON output is not a report object.");
+    throw new ReportValidationError("Canary's JSON output is not a report object.");
   }
 
   const report = parsed as Partial<CanaryReport>;
   if (typeof report.schemaVersion !== "number") {
-    throw new InvalidReportError("Canary's JSON output is missing a numeric \"schemaVersion\" field.");
+    throw new ReportValidationError("Canary's JSON output is missing a numeric \"schemaVersion\" field.");
   }
   if (report.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
-    throw new InvalidReportError(
+    throw new ReportValidationError(
       `Unsupported report schemaVersion ${String(report.schemaVersion)} ` +
         `(this Action supports schemaVersion ${String(SUPPORTED_SCHEMA_VERSION)}). ` +
         `A newer Protocol-Canary release may require a newer ProtocolCanary-Action version.`,
@@ -195,14 +195,14 @@ export function parseReport(stdout: string): CanaryReport {
     !["pass", "warning", "fail", "error"].includes(report.status) ||
     !Array.isArray(report.results)
   ) {
-    throw new InvalidReportError("Canary's JSON output does not match the documented report shape.");
+    throw new ReportValidationError("Canary's JSON output does not match the documented report shape.");
   }
 
   const rawResults: unknown[] = report.results;
   for (const [index, entry] of rawResults.entries()) {
     const problem = resultShapeError(entry);
     if (problem !== undefined) {
-      throw new InvalidReportError(
+      throw new ReportValidationError(
         `Canary's JSON output does not match the documented report shape: results[${String(index)}] ${problem}.`,
       );
     }
@@ -210,7 +210,7 @@ export function parseReport(stdout: string): CanaryReport {
   const results = rawResults as CanaryResult[];
 
   if (report.skipped !== undefined && !Array.isArray(report.skipped)) {
-    throw new InvalidReportError(
+    throw new ReportValidationError(
       'Canary\'s JSON output does not match the documented report shape: "skipped" is present but not an array.',
     );
   }
@@ -218,7 +218,7 @@ export function parseReport(stdout: string): CanaryReport {
   for (const [index, entry] of rawSkipped.entries()) {
     const problem = skipShapeError(entry);
     if (problem !== undefined) {
-      throw new InvalidReportError(
+      throw new ReportValidationError(
         `Canary's JSON output does not match the documented report shape: skipped[${String(index)}] ${problem}.`,
       );
     }
