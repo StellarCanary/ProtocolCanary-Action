@@ -18,6 +18,7 @@ const coreMocks = vi.hoisted(() => ({
   infoMock: vi.fn(),
   debugMock: vi.fn(),
   warningMock: vi.fn(),
+  addPathMock: vi.fn(),
 }));
 
 const { execMock } = vi.hoisted(() => ({ execMock: vi.fn() }));
@@ -47,6 +48,7 @@ vi.mock("@actions/core", () => ({
   info: coreMocks.infoMock,
   debug: coreMocks.debugMock,
   warning: coreMocks.warningMock,
+  addPath: coreMocks.addPathMock,
 }));
 
 vi.mock("@actions/exec", () => ({
@@ -71,9 +73,16 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...actual, homedir: osMocks.homedirMock };
 });
 
-import { cargoInstallTimeoutMs, ensureCanaryInstalled } from "../../src/canary";
+import {
+  PREBUILT_TARGETS,
+  cargoInstallTimeoutMs,
+  ensureCanaryInstalled,
+  prebuiltAssetName,
+  prebuiltTargetFor,
+  prebuiltTargetOrThrow,
+} from "../../src/canary";
 import { CARGO_INSTALL_TIMEOUT_FLOOR_MS } from "../../src/runner";
-import { CanaryNotFoundError, InstallationFailedError } from "../../src/errors";
+import { CanaryNotFoundError, InstallationFailedError, UnsupportedPlatformError } from "../../src/errors";
 import type { ResolvedVersion } from "../../src/version";
 import { CANARY_REPO_URL } from "../../src/version";
 
@@ -161,13 +170,22 @@ function platformBinaryName(): string {
  * always restore, even when the body throws.
  */
 async function withPlatform<T>(platform: NodeJS.Platform, run: () => Promise<T> | T): Promise<T> {
-  const original = Object.getOwnPropertyDescriptor(process, "platform");
-  Object.defineProperty(process, "platform", { value: platform, configurable: true, enumerable: true, writable: false });
+  return withProcessProperty("platform", platform, run);
+}
+
+/** Same pattern as {@link withPlatform}, for `process.arch`. */
+async function withArch<T>(arch: string, run: () => Promise<T> | T): Promise<T> {
+  return withProcessProperty("arch", arch, run);
+}
+
+async function withProcessProperty<T>(key: "platform" | "arch", value: string, run: () => Promise<T> | T): Promise<T> {
+  const original = Object.getOwnPropertyDescriptor(process, key);
+  Object.defineProperty(process, key, { value, configurable: true, enumerable: true, writable: false });
   try {
     return await run();
   } finally {
     if (original !== undefined) {
-      Object.defineProperty(process, "platform", original);
+      Object.defineProperty(process, key, original);
     }
   }
 }
@@ -987,5 +1005,301 @@ describe("ensureCanaryInstalled install timeout (issue #65)", () => {
     const installed = await ensureCanaryInstalled(RESOLVED, CARGO_INSTALL_TIMEOUT_FLOOR_MS);
 
     expect(installed.version).toBe(RESOLVED.version);
+  });
+});
+
+describe("prebuilt release installation (#359)", () => {
+  // The runner this suite executes on; flow tests are skipped on a platform
+  // with no published prebuilt target (for example win32-arm64), where the
+  // Action correctly falls back to `cargo install`.
+  const RUNNER_TARGET = prebuiltTargetFor();
+  let tempCargoHome: string;
+  let tempToolCache: string;
+  let originalCargoHome: string | undefined;
+  let originalToolCache: string | undefined;
+
+  /** A `302` response pointing at `location`, as GitHub's asset download does. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function respondRedirect(location: string): any {
+    return (_url: string, _options: unknown, callback: (response: FakeResponse) => void) => {
+      const response = new FakeResponse(302);
+      response.headers.location = location;
+      const request = new FakeRequest();
+      callback(response);
+      queueMicrotask(() => response.emit("end"));
+      return request;
+    };
+  }
+
+  /** Serves a release listing, the archive bytes, and a checksum manifest. */
+  function mockPrebuiltRelease(options: { digest?: string; archive?: string; includeChecksum?: boolean } = {}): {
+    assetName: string;
+    digest: string;
+  } {
+    const assetName = prebuiltAssetName(RESOLVED.version, RUNNER_TARGET as string);
+    const archive = options.archive ?? "fake-prebuilt-archive-bytes";
+    const digest = options.digest ?? crypto.createHash("sha256").update(archive).digest("hex");
+    const assets = [{ name: assetName, browser_download_url: `https://example.test/${assetName}` }];
+    if (options.includeChecksum !== false) {
+      assets.push({ name: "SHA256SUMS", browser_download_url: "https://example.test/SHA256SUMS" });
+    }
+    httpsGetMock
+      .mockImplementationOnce(respond(200, JSON.stringify({ assets })))
+      .mockImplementationOnce(respond(200, archive));
+    if (options.includeChecksum !== false) {
+      httpsGetMock.mockImplementationOnce(respond(200, `${digest}  ${assetName}\n`));
+    }
+    return { assetName, digest };
+  }
+
+  /** exec mock that "extracts" the archive into the requested directory and
+   * answers the version probe; `tarBehavior` can simulate a bad archive. */
+  function mockPrebuiltExec(tarBehavior?: (destination: string) => void): void {
+    execMock.mockReset();
+    execMock.mockImplementation(
+      async (command: string, args: string[] = [], options: ExecCallOptions = {}): Promise<number> => {
+        if (command === "tar") {
+          const destination = args[3] as string;
+          fs.mkdirSync(destination, { recursive: true });
+          if (tarBehavior !== undefined) {
+            tarBehavior(destination);
+          } else {
+            fs.writeFileSync(path.join(destination, platformBinaryName()), "prebuilt-binary");
+          }
+          return 0;
+        }
+        options.listeners?.stdout?.(Buffer.from(`stellar-canary ${RESOLVED.version}\n`));
+        return 0;
+      },
+    );
+  }
+
+  /** exec mock for the source-install fallback (`cargo --version` + probe). */
+  function mockCargoExec(): void {
+    execMock.mockReset();
+    execMock.mockImplementation(
+      async (command: string, args: string[] = [], options: ExecCallOptions = {}): Promise<number> => {
+        if (command === "cargo" && args[0] === "--version") {
+          return 0;
+        }
+        if (command === "cargo" && args[0] === "install") {
+          return 0;
+        }
+        options.listeners?.stdout?.(Buffer.from(`stellar-canary ${RESOLVED.version}\n`));
+        return 0;
+      },
+    );
+  }
+
+  beforeEach(() => {
+    tempCargoHome = fs.mkdtempSync(path.join(os.tmpdir(), "canary-prebuilt-cargo-home-"));
+    fs.mkdirSync(path.join(tempCargoHome, "bin"), { recursive: true });
+    originalCargoHome = process.env.CARGO_HOME;
+    process.env.CARGO_HOME = tempCargoHome;
+
+    tempToolCache = fs.mkdtempSync(path.join(os.tmpdir(), "canary-prebuilt-tool-cache-"));
+    originalToolCache = process.env.RUNNER_TOOL_CACHE;
+    process.env.RUNNER_TOOL_CACHE = tempToolCache;
+
+    cacheMocks.isFeatureAvailableMock.mockReset().mockReturnValue(false);
+    cacheMocks.restoreCacheMock.mockReset().mockResolvedValue(undefined);
+    cacheMocks.saveCacheMock.mockReset().mockResolvedValue(undefined);
+    osMocks.homedirMock.mockReset().mockReturnValue(FAKE_HOME);
+    coreMocks.infoMock.mockReset();
+    coreMocks.debugMock.mockReset();
+    coreMocks.warningMock.mockReset();
+    coreMocks.addPathMock.mockReset();
+
+    httpsGetMock.mockReset();
+    httpsGetMock.mockImplementation(respond(404, ""));
+
+    spawnMock.mockReset();
+    spawnMock.mockImplementation(() => new ImmediateChild(0) as unknown as ChildProcess);
+  });
+
+  afterEach(() => {
+    if (originalCargoHome === undefined) {
+      delete process.env.CARGO_HOME;
+    } else {
+      process.env.CARGO_HOME = originalCargoHome;
+    }
+    if (originalToolCache === undefined) {
+      delete process.env.RUNNER_TOOL_CACHE;
+    } else {
+      process.env.RUNNER_TOOL_CACHE = originalToolCache;
+    }
+    fs.rmSync(tempCargoHome, { recursive: true, force: true });
+    fs.rmSync(tempToolCache, { recursive: true, force: true });
+  });
+
+  it("maps every supported runner to its release target triple", () => {
+    expect(prebuiltTargetFor("linux", "x64")).toBe("x86_64-unknown-linux-gnu");
+    expect(prebuiltTargetFor("linux", "arm64")).toBe("aarch64-unknown-linux-gnu");
+    expect(prebuiltTargetFor("darwin", "x64")).toBe("x86_64-apple-darwin");
+    expect(prebuiltTargetFor("darwin", "arm64")).toBe("aarch64-apple-darwin");
+    expect(prebuiltTargetFor("win32", "x64")).toBe("x86_64-pc-windows-msvc");
+    expect(Object.keys(PREBUILT_TARGETS)).toHaveLength(5);
+  });
+
+  it("names the release asset stellar-canary-${version}-${target}.tar.gz", () => {
+    expect(prebuiltAssetName("0.2.0", "x86_64-unknown-linux-gnu")).toBe(
+      "stellar-canary-0.2.0-x86_64-unknown-linux-gnu.tar.gz",
+    );
+  });
+
+  it("reports an unsupported architecture with a clear, actionable error", () => {
+    expect(prebuiltTargetFor("linux", "armv7")).toBeUndefined();
+    expect(prebuiltTargetFor("win32", "arm64")).toBeUndefined();
+
+    expect(() => prebuiltTargetOrThrow("linux", "armv7")).toThrow(UnsupportedPlatformError);
+    expect(() => prebuiltTargetOrThrow("linux", "armv7")).toThrow(/linux-armv7/);
+    expect(() => prebuiltTargetOrThrow("linux", "armv7")).toThrow(/linux-x64/);
+    expect(() => prebuiltTargetOrThrow("linux", "armv7")).toThrow(/cargo install/);
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("installs a verified prebuilt binary without cargo", async () => {
+    const { digest, assetName } = mockPrebuiltRelease();
+    mockPrebuiltExec();
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.version).toBe(RESOLVED.version);
+    expect(installed.binaryPath).toContain(RUNNER_TARGET as string);
+    expect(fs.readFileSync(installed.binaryPath, "utf8")).toBe("prebuilt-binary");
+    // No source build was needed.
+    expect(spawnMock).not.toHaveBeenCalled();
+    // The archive was checksum-verified before extraction.
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(
+      `Verified ${assetName} against the published SHA-256 checksum.`,
+    );
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
+    // The binary is exported on PATH and its containing directory cached.
+    expect(coreMocks.addPathMock).toHaveBeenCalledWith(path.dirname(installed.binaryPath));
+    // Extraction used the runner's tar with the downloaded archive.
+    const tarCall = execMock.mock.calls.find((call) => call[0] === "tar");
+    expect(tarCall?.[1]?.[0]).toBe("-xzf");
+    expect(tarCall?.[1]?.[2]).toBe("-C");
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("rejects a prebuilt archive whose checksum does not match", async () => {
+    mockPrebuiltRelease({ digest: "f".repeat(64) });
+    mockPrebuiltExec();
+
+    const error = await ensureCanaryInstalled(RESOLVED).then(
+      () => {
+        throw new Error("expected ensureCanaryInstalled to reject");
+      },
+      (rejection: unknown) => rejection,
+    );
+    expect(error).toBeInstanceOf(InstallationFailedError);
+    expect((error as InstallationFailedError).message).toMatch(/Checksum verification failed/);
+    // Neither the archive was extracted nor a source build started.
+    expect(execMock.mock.calls.some((call) => call[0] === "tar")).toBe(false);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("follows the redirect GitHub serves for a release asset", async () => {
+    const assetName = prebuiltAssetName(RESOLVED.version, RUNNER_TARGET as string);
+    const archive = "redirected-archive-bytes";
+    const digest = crypto.createHash("sha256").update(archive).digest("hex");
+    httpsGetMock
+      .mockImplementationOnce(
+        respond(
+          200,
+          JSON.stringify({
+            assets: [
+              { name: assetName, browser_download_url: `https://example.test/${assetName}` },
+              { name: "SHA256SUMS", browser_download_url: "https://example.test/SHA256SUMS" },
+            ],
+          }),
+        ),
+      )
+      .mockImplementationOnce(respondRedirect("https://objects.example.test/assets/1"))
+      .mockImplementationOnce(respond(200, archive))
+      .mockImplementationOnce(respond(200, `${digest}  ${assetName}\n`));
+    mockPrebuiltExec();
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.version).toBe(RESOLVED.version);
+    expect(httpsGetMock).toHaveBeenCalledTimes(4);
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("installs without a published checksum manifest", async () => {
+    mockPrebuiltRelease({ includeChecksum: false });
+    mockPrebuiltExec();
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.version).toBe(RESOLVED.version);
+    expect(coreMocks.debugMock).toHaveBeenCalledWith(
+      expect.stringContaining("No published checksum manifest"),
+    );
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("rejects an archive that contains no executable", async () => {
+    mockPrebuiltRelease();
+    mockPrebuiltExec(() => {
+      // Deliberately extract nothing.
+    });
+
+    await expect(ensureCanaryInstalled(RESOLVED)).rejects.toThrow(/did not contain a stellar-canary/);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("rejects a prebuilt binary whose version does not match", async () => {
+    mockPrebuiltRelease();
+    execMock.mockReset();
+    execMock.mockImplementation(
+      async (command: string, args: string[] = [], options: ExecCallOptions = {}): Promise<number> => {
+        if (command === "tar") {
+          fs.mkdirSync(args[3] as string, { recursive: true });
+          fs.writeFileSync(path.join(args[3] as string, platformBinaryName()), "prebuilt-binary");
+          return 0;
+        }
+        options.listeners?.stdout?.(Buffer.from("stellar-canary 9.9.9\n"));
+        return 0;
+      },
+    );
+
+    await expect(ensureCanaryInstalled(RESOLVED)).rejects.toThrow(/reports version 9.9.9/);
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("falls back to a source install when the release has no matching asset", async () => {
+    httpsGetMock.mockImplementationOnce(respond(200, JSON.stringify({ assets: [] })));
+    mockCargoExec();
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.version).toBe(RESOLVED.version);
+    expect(spawnMock).toHaveBeenCalled();
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(expect.stringContaining("has no prebuilt asset"));
+  });
+
+  it("falls back to a source install with a warning on an unsupported platform", async () => {
+    mockCargoExec();
+
+    const installed = await withPlatform("linux", () =>
+      withArch("armv7", () => ensureCanaryInstalled(RESOLVED)),
+    );
+
+    expect(installed.version).toBe(RESOLVED.version);
+    expect(coreMocks.warningMock).toHaveBeenCalledWith(
+      expect.stringContaining("No prebuilt stellar-canary binary is published for linux-armv7"),
+    );
+    expect(spawnMock).toHaveBeenCalled();
+  });
+
+  it.skipIf(RUNNER_TARGET === undefined)("falls back to a source install when the release cannot be listed", async () => {
+    // The default mock answers 404 for every GitHub request.
+    mockCargoExec();
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.version).toBe(RESOLVED.version);
+    expect(spawnMock).toHaveBeenCalled();
+    expect(coreMocks.debugMock).toHaveBeenCalledWith(
+      expect.stringContaining("Could not list release assets"),
+    );
   });
 });

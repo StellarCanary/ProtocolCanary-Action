@@ -37,6 +37,11 @@ export class InstallationFailedError extends CanaryActionError {
   readonly code = "InstallationFailed";
 }
 
+/** No prebuilt release binary exists for this runner's platform/architecture. */
+export class UnsupportedPlatformError extends CanaryActionError {
+  readonly code = "UnsupportedPlatform";
+}
+
 /** The Canary process could not be started or was killed abnormally. */
 export class CanaryExecutionFailedError extends CanaryActionError {
   readonly code = "CanaryExecutionFailed";

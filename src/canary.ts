@@ -12,6 +12,7 @@ import {
   CanaryNotFoundError,
   InstallationFailedError,
   TimeoutError,
+  UnsupportedPlatformError,
 } from "./errors";
 import type { CheckExecutionResult } from "./runner";
 import { CARGO_INSTALL_TIMEOUT_FLOOR_MS, runCheck } from "./runner";
@@ -143,15 +144,23 @@ async function lookupPublishedChecksums(version: string): Promise<Map<string, st
   }
 }
 
+/** Release archives (`.tar.gz`, `.zip`, ...) are not the executable itself;
+ * their digests must never be compared against an installed binary. */
+const ARCHIVE_ASSET_PATTERN = /\.(?:tar\.gz|tgz|tar\.xz|zip)$/i;
+
 /** Chooses the manifest entry that corresponds to the binary this runner
  * will execute, preferring an exact file-name match and falling back to a
- * platform match when the manifest names per-target artifacts. */
+ * platform match when the manifest names per-target artifacts. Archive
+ * entries are skipped: a checksum for `stellar-canary-...-x86_64.tar.gz` is
+ * not a checksum for the extracted binary. */
 function selectExpectedChecksum(entries: Map<string, string>, binary: string): string | undefined {
   const exact = entries.get(binary);
   if (exact !== undefined) {
     return exact;
   }
-  const candidates = [...entries.entries()].filter(([name]) => name.includes("stellar-canary"));
+  const candidates = [...entries.entries()].filter(
+    ([name]) => name.includes("stellar-canary") && !ARCHIVE_ASSET_PATTERN.test(name),
+  );
   const platformAndArch = candidates.find(
     ([name]) => name.includes(process.platform) && name.includes(process.arch),
   );
@@ -180,6 +189,325 @@ async function sha256File(filePath: string): Promise<string> {
       resolve(hash.digest("hex"));
     });
   });
+}
+
+/**
+ * Prebuilt release targets published by Protocol-Canary, keyed by
+ * `<process.platform>-<process.arch>`. These are the Rust target triples the
+ * release assets are built for; any other combination has no prebuilt
+ * binary and falls back to a source install.
+ */
+export const PREBUILT_TARGETS: Readonly<Record<string, string>> = {
+  "linux-x64": "x86_64-unknown-linux-gnu",
+  "linux-arm64": "aarch64-unknown-linux-gnu",
+  "darwin-x64": "x86_64-apple-darwin",
+  "darwin-arm64": "aarch64-apple-darwin",
+  "win32-x64": "x86_64-pc-windows-msvc",
+};
+
+const PREBUILT_DOWNLOAD_TIMEOUT_MS = 120_000;
+const MAX_REDIRECTS = 5;
+
+/**
+ * Maps a runner platform/architecture pair to the Protocol-Canary release
+ * target triple, or `undefined` when no prebuilt binary exists for it.
+ */
+export function prebuiltTargetFor(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): string | undefined {
+  return PREBUILT_TARGETS[`${platform}-${arch}`];
+}
+
+/**
+ * Like {@link prebuiltTargetFor}, but throws a clear
+ * {@link UnsupportedPlatformError} naming the supported runners instead of
+ * returning `undefined`. The install chain catches it and falls back to
+ * `cargo install`, so an unsupported runner still works — it just builds
+ * from source.
+ */
+export function prebuiltTargetOrThrow(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): string {
+  const target = prebuiltTargetFor(platform, arch);
+  if (target !== undefined) {
+    return target;
+  }
+  throw new UnsupportedPlatformError(
+    `No prebuilt stellar-canary binary is published for ${platform}-${arch}. ` +
+      `Supported runners: ${Object.keys(PREBUILT_TARGETS).join(", ")}. ` +
+      "Falling back to a source install with `cargo install`.",
+  );
+}
+
+/** The release asset name for a prebuilt binary of `version` on `target`. */
+export function prebuiltAssetName(version: string, target: string): string {
+  return `stellar-canary-${version}-${target}.tar.gz`;
+}
+
+interface DownloadableAsset {
+  readonly name: string;
+  readonly url: string;
+}
+
+function githubToken(): string | undefined {
+  const token = (process.env.GITHUB_TOKEN ?? "").trim();
+  return token === "" ? undefined : token;
+}
+
+/**
+ * Lists the assets attached to the Protocol-Canary release for `version`.
+ * Returns `undefined` — never throws — when the release or its asset list is
+ * unavailable, so callers can fall back to a source install.
+ */
+async function fetchReleaseAssets(version: string): Promise<readonly DownloadableAsset[] | undefined> {
+  try {
+    const body = await httpsGetText(`${CANARY_API_REPO_URL}/releases/tags/v${version}`, githubToken());
+    const parsed = JSON.parse(body) as unknown;
+    if (typeof parsed !== "object" || parsed === null) {
+      return undefined;
+    }
+    const assets = (parsed as { assets?: unknown }).assets;
+    if (!Array.isArray(assets)) {
+      return undefined;
+    }
+    return (assets as ReleaseAsset[])
+      .filter(
+        (asset): asset is { name: string; browser_download_url: string } =>
+          typeof asset.name === "string" && typeof asset.browser_download_url === "string",
+      )
+      .map((asset) => ({ name: asset.name, url: asset.browser_download_url }));
+  } catch (error) {
+    core.debug(`Could not list release assets for Protocol-Canary ${version}: ${String(error)}`);
+    return undefined;
+  }
+}
+
+/**
+ * Downloads `url` to `destination`, following GitHub's redirect to its
+ * object-storage host and streaming bytes to disk so a binary never has to
+ * be held in memory whole. Rejects on a non-200 response, a redirect chain
+ * longer than {@link MAX_REDIRECTS}, a timeout, or a transport error.
+ */
+function downloadReleaseAsset(
+  url: string,
+  destination: string,
+  redirectsLeft: number = MAX_REDIRECTS,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = { "User-Agent": "ProtocolCanary-Action" };
+    const token = githubToken();
+    if (token !== undefined) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const request = https.get(url, { headers, timeout: PREBUILT_DOWNLOAD_TIMEOUT_MS }, (response) => {
+      const status = response.statusCode ?? 0;
+      const location = response.headers.location;
+      if (status >= 300 && status < 400 && typeof location === "string") {
+        response.resume();
+        if (redirectsLeft <= 0) {
+          reject(new Error(`Too many redirects while downloading ${url}`));
+          return;
+        }
+        resolve(downloadReleaseAsset(new URL(location, url).toString(), destination, redirectsLeft - 1));
+        return;
+      }
+      if (status !== 200) {
+        response.resume();
+        reject(new Error(`GitHub returned status ${String(status)} for ${url}`));
+        return;
+      }
+
+      const fd = fs.openSync(destination, "w");
+      let settled = false;
+      const fail = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        try {
+          fs.closeSync(fd);
+        } catch {
+          // The descriptor is already closed; nothing else to clean up.
+        }
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      response.on("data", (chunk: string | Buffer) => {
+        try {
+          fs.writeSync(fd, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        } catch (error) {
+          fail(error);
+        }
+      });
+      response.on("error", fail);
+      response.on("end", () => {
+        if (settled) return;
+        settled = true;
+        fs.closeSync(fd);
+        resolve();
+      });
+    });
+    request.on("timeout", () => {
+      request.destroy(new Error(`timed out downloading ${url}`));
+    });
+    request.on("error", reject);
+  });
+}
+
+/**
+ * Verifies a downloaded release archive against the checksum manifest
+ * published with the same release, when one exists. A mismatch always throws
+ * (so a tampered or corrupted archive is never extracted); a missing
+ * manifest or entry degrades to a debug log, matching the existing binary
+ * verification policy in SECURITY.md.
+ */
+async function verifyDownloadedArchive(
+  archivePath: string,
+  assetName: string,
+  assets: readonly DownloadableAsset[],
+  version: string,
+): Promise<void> {
+  const manifestAsset = assets.find((asset) => CHECKSUM_ASSET_PATTERN.test(asset.name));
+  if (manifestAsset === undefined) {
+    core.debug(
+      `No published checksum manifest for Protocol-Canary ${version}; relying on HTTPS and the pinned release tag.`,
+    );
+    return;
+  }
+  const expected = parseChecksumManifest(await httpsGetText(manifestAsset.url, githubToken())).get(assetName);
+  if (expected === undefined) {
+    core.debug(`Published checksum manifest has no entry for ${assetName}; relying on HTTPS and the pinned release tag.`);
+    return;
+  }
+  const actual = await sha256File(archivePath);
+  if (actual !== expected) {
+    throw new InstallationFailedError(
+      `Checksum verification failed for ${assetName}: expected SHA-256 ${expected}, but the downloaded archive ` +
+        `hashes to ${actual}. Refusing to use it (see SECURITY.md).`,
+    );
+  }
+  core.info(`Verified ${assetName} against the published SHA-256 checksum.`);
+}
+
+/** Extracts a `.tar.gz` release archive with the runner's `tar`. */
+async function extractArchive(archivePath: string, destinationDir: string): Promise<void> {
+  fs.mkdirSync(destinationDir, { recursive: true });
+  const exitCode = await exec.exec("tar", ["-xzf", archivePath, "-C", destinationDir], { silent: true });
+  if (exitCode !== 0) {
+    throw new InstallationFailedError(
+      `Failed to extract ${path.basename(archivePath)} (tar exited with code ${String(exitCode)}).`,
+    );
+  }
+}
+
+/** Finds the executable inside an extracted release archive, tolerating both
+ * a flat archive and one that nests the binary under a directory or `bin/`. */
+function findExtractedBinary(directory: string): string | undefined {
+  const candidates = [path.join(directory, binaryName()), path.join(directory, "bin", binaryName())];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      candidates.push(
+        path.join(directory, entry.name, binaryName()),
+        path.join(directory, entry.name, "bin", binaryName()),
+      );
+    }
+  }
+  return candidates.find((candidate) => {
+    try {
+      return fs.statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Directory under the runner tool cache where a prebuilt binary is placed. */
+function prebuiltInstallDir(version: string, target: string): string {
+  const toolCache = process.env.RUNNER_TOOL_CACHE ?? path.join(os.tmpdir(), "stellar-canary-tool-cache");
+  return path.join(toolCache, "stellar-canary", version, target);
+}
+
+/**
+ * Downloads, verifies, extracts and installs the official prebuilt
+ * `stellar-canary` binary for this runner, returning `undefined` when no
+ * prebuilt asset applies so the caller can fall back to `cargo install`.
+ *
+ * Returning `undefined` is the deliberate compatibility path: the engine may
+ * not publish prebuilt assets for a release yet, or may not support the
+ * runner's architecture. Once a matching asset *is* advertised, a failed
+ * download, checksum mismatch, extraction failure, or version mismatch is a
+ * real installation failure and throws instead of silently rebuilding.
+ */
+async function installFromPrebuilt(resolved: ResolvedVersion): Promise<InstalledCanary | undefined> {
+  let target: string;
+  try {
+    target = prebuiltTargetOrThrow();
+  } catch (error) {
+    if (!(error instanceof UnsupportedPlatformError)) {
+      throw error;
+    }
+    core.warning(error.message);
+    return undefined;
+  }
+
+  const assetName = prebuiltAssetName(resolved.version, target);
+  const assets = await fetchReleaseAssets(resolved.version);
+  if (assets === undefined) {
+    core.debug(`Could not list release assets for Protocol-Canary ${resolved.version}; installing from source.`);
+    return undefined;
+  }
+  const asset = assets.find((candidate) => candidate.name === assetName);
+  if (asset === undefined) {
+    core.info(
+      `Protocol-Canary ${resolved.version} has no prebuilt asset ${assetName}; installing from source with \`cargo install\`.`,
+    );
+    return undefined;
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stellar-canary-prebuilt-"));
+  try {
+    const archivePath = path.join(tempDir, assetName);
+    core.info(`Downloading prebuilt stellar-canary ${resolved.version} for ${target}...`);
+    await downloadReleaseAsset(asset.url, archivePath);
+    await verifyDownloadedArchive(archivePath, assetName, assets, resolved.version);
+
+    const extracted = path.join(tempDir, "extracted");
+    await extractArchive(archivePath, extracted);
+    const extractedBinary = findExtractedBinary(extracted);
+    if (extractedBinary === undefined) {
+      throw new InstallationFailedError(
+        `The prebuilt archive ${assetName} did not contain a ${binaryName()} executable.`,
+      );
+    }
+    if (process.platform !== "win32") {
+      fs.chmodSync(extractedBinary, 0o755);
+    }
+    const version = await getInstalledVersion(extractedBinary);
+    if (version === undefined) {
+      throw new InstallationFailedError(
+        `Downloaded prebuilt stellar-canary from ${assetName} could not be executed to verify its version.`,
+      );
+    }
+    if (version !== resolved.version) {
+      throw new InstallationFailedError(
+        `Prebuilt stellar-canary from ${assetName} reports version ${version}, but ${resolved.version} was requested.`,
+      );
+    }
+
+    const installDir = prebuiltInstallDir(resolved.version, target);
+    fs.mkdirSync(installDir, { recursive: true });
+    const binaryPath = path.join(installDir, binaryName());
+    fs.copyFileSync(extractedBinary, binaryPath);
+    if (process.platform !== "win32") {
+      fs.chmodSync(binaryPath, 0o755);
+    }
+    core.addPath(installDir);
+    core.info(`Installed prebuilt stellar-canary ${version} at ${binaryPath}.`);
+    await saveToCache(resolved, binaryPath);
+    return { binaryPath, version };
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -351,10 +679,10 @@ async function ensureCargoAvailable(): Promise<void> {
     await exec.exec("cargo", ["--version"], { silent: true });
   } catch (error) {
     throw new InstallationFailedError(
-      "The `cargo` command was not found on this runner. Protocol-Canary does not yet publish " +
-        "prebuilt release binaries, so this Action installs it from source with `cargo install`. " +
-        "GitHub-hosted Ubuntu runners include a Rust toolchain by default; on a self-hosted or " +
-        "non-Ubuntu runner, install one first (for example with `dtolnay/rust-toolchain`).\n" +
+      "The `cargo` command was not found on this runner, and no prebuilt Protocol-Canary binary " +
+        "was available for this release and platform, so this Action needs to install it from source " +
+        "with `cargo install`. GitHub-hosted Ubuntu runners include a Rust toolchain by default; on a " +
+        "self-hosted or non-Ubuntu runner, install one first (for example with `dtolnay/rust-toolchain`).\n" +
         `Underlying error: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
@@ -463,6 +791,14 @@ export async function ensureCanaryInstalled(
   if (cached !== undefined) {
     await verifyInstalledBinary(cached.binaryPath, resolved);
     return cached;
+  }
+
+  // Prebuilt release binaries cut install time from minutes (a Rust build)
+  // to seconds. When no asset applies to this release or runner, the helper
+  // returns undefined and the source install below remains the fallback.
+  const prebuilt = await installFromPrebuilt(resolved);
+  if (prebuilt !== undefined) {
+    return prebuilt;
   }
 
   await ensureCargoAvailable();

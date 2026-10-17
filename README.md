@@ -375,14 +375,20 @@ generated unique suffix when the invocations share the same inputs.
 
 ## Installation & integrity
 
-`Protocol-Canary` does not yet publish prebuilt release binaries or
-checksums (see its own `docs/json-report-contract.md` and this Action's
-[SECURITY.md](SECURITY.md)). This Action installs it with `cargo install
---git`, pinned to the immutable commit the requested version's tag
-resolved to at run time (falling back to the tag itself, with a warning, if
-that resolution fails) — see `src/version.ts` and `src/canary.ts`. This
-requires a Rust/Cargo toolchain on the runner; GitHub-hosted Ubuntu
-runners include one by default. A self-hosted or non-Ubuntu runner must
+If the requested Protocol-Canary release publishes a prebuilt binary for
+the runner (`stellar-canary-<version>-<target>.tar.gz` for Linux x64/arm64,
+macOS x64/arm64, or Windows x64), this Action downloads it, verifies it
+against the release's published SHA-256 manifest when one exists, extracts
+it into the runner tool cache, and adds it to `PATH`. That turns a
+several-minute Rust build into a seconds-long download.
+
+When a release has no matching asset, or the runner architecture is not one
+of the five supported targets, the Action falls back automatically to
+`cargo install --git`, pinned to the immutable commit the requested
+version's tag resolved to at run time (falling back to the tag itself, with
+a warning, if that resolution fails) — see `src/version.ts` and
+`src/canary.ts`. That fallback requires a Rust/Cargo toolchain on the
+runner; GitHub-hosted Ubuntu runners include one by default. A self-hosted or non-Ubuntu runner must
 install one before this Action runs — see
 [`examples/self-hosted.yml`](examples/self-hosted.yml) for a complete
 workflow that does this with `dtolnay/rust-toolchain` ahead of invoking
