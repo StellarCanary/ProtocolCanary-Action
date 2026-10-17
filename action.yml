@@ -160,6 +160,14 @@ outputs:
       produced output to parse; empty/unset on an execution failure (when
       status is `execution-failed`), unlike `passed`/`warnings`/`failures`/`errors`,
       which are explicitly set to `0` in that case.
+  receipt:
+    description: >-
+      Absolute path to the machine-readable execution receipt
+      (`receiptVersion: 1`), recording the engine version and build commit,
+      fixture-pack digest, target and observed protocol, and timestamp.
+      Fields an older engine does not report are recorded as `unknown`. The
+      receipt is an unsigned provenance record, not a cryptographic
+      attestation. Only set when Canary produced a parsable report.
 
 runs:
   using: node24

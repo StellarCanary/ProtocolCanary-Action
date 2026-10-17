@@ -10,6 +10,7 @@ import { describeError, isCanaryActionError } from "./errors";
 import type { ActionInputs } from "./inputs";
 import { getInputs } from "./inputs";
 import { describeExitCode, parseReport } from "./output";
+import { receiptFromReport, serializeReceipt } from "./receipt";
 import { buildCheckArgs, engineSupportsAllowEmpty, runCheck } from "./runner";
 import { renderExecutionFailureMarkdown, renderSummaryMarkdown, writeSummary } from "./summary";
 import { resolveVersion } from "./version";
@@ -17,6 +18,15 @@ import { resolveVersion } from "./version";
 function reportFilePath(): string {
   const dir = process.env.RUNNER_TEMP ?? os.tmpdir();
   return path.join(dir, "stellar-canary-report.json");
+}
+
+/** Path of the machine-readable execution receipt written next to the
+ * report. Provenance is auxiliary: a failure to write it never changes the
+ * compatibility result, so it is reported as a warning rather than a
+ * step failure. */
+function receiptFilePath(): string {
+  const dir = process.env.RUNNER_TEMP ?? os.tmpdir();
+  return path.join(dir, "stellar-canary-receipt.json");
 }
 
 /**
@@ -165,6 +175,18 @@ export async function run(): Promise<void> {
   core.setOutput("failures", String(report.counts.failed));
   core.setOutput("errors", String(report.counts.errors));
   core.setOutput("report", reportPath);
+
+  // The execution receipt records provenance (engine version/commit, pack
+  // digest, target/observed protocol) without overstating it as a signed
+  // attestation. Writing it is auxiliary: provenance must never turn a real
+  // compatibility result into a failure.
+  try {
+    const receiptPath = receiptFilePath();
+    fs.writeFileSync(receiptPath, serializeReceipt(receiptFromReport(report)), "utf8");
+    core.setOutput("receipt", receiptPath);
+  } catch (error) {
+    core.warning(`Could not write the execution receipt: ${describeError(error)}`);
+  }
 
   if (inputs.uploadReport) {
     await uploadReport(reportPath, artifactDifferentiator(inputs));

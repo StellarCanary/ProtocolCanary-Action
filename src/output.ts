@@ -54,6 +54,12 @@ export interface CanaryReport {
     readonly branch: string | null;
     readonly isDirty: boolean | null;
   };
+  /** Canonical digest of the fixture pack that was executed, when emitted by
+   * newer engines (see Protocol-Canary E-071). Absent on older reports. */
+  readonly packDigest?: string;
+  /** Build commit of the engine binary, when emitted by newer engines (see
+   * Protocol-Canary E-055). Absent on older reports. */
+  readonly engineCommit?: string;
 }
 
 function isCountsShape(value: unknown): value is CanaryCounts {

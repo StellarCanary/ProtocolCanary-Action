@@ -246,4 +246,25 @@ describe("run", () => {
     expect(errorMock).not.toHaveBeenCalled();
     expect(warningMock).not.toHaveBeenCalled();
   });
+
+  // #360: the execution receipt records provenance for the run and its path
+  // is exposed as an output, without changing pass/fail.
+  it("writes an execution receipt and exposes its path (#360)", async () => {
+    runCheckMock.mockResolvedValueOnce({ exitCode: 0, signal: null, stdout: JSON.stringify(PASS_REPORT), stderr: "" });
+
+    await run();
+
+    const receiptPath = path.join(runnerTemp, "stellar-canary-receipt.json");
+    expect(fs.existsSync(receiptPath)).toBe(true);
+    const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+    expect(receipt.receiptVersion).toBe(1);
+    expect(receipt.engineVersion).toBe(PASS_REPORT.toolVersion);
+    expect(receipt.protocol).toBe(PASS_REPORT.targetProtocol);
+    // Older reports omit these; the receipt records "unknown", never a guess.
+    expect(receipt.engineCommit).toBe("unknown");
+    expect(receipt.packDigest).toBe("unknown");
+    expect(typeof receipt.timestamp).toBe("string");
+    expect(setOutputMock).toHaveBeenCalledWith("receipt", receiptPath);
+    expect(setFailedMock).not.toHaveBeenCalled();
+  });
 });

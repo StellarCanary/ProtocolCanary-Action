@@ -146,6 +146,7 @@ literals below.
 | `failures` | Number of checks that failed a compatibility assertion. | `"2"` |
 | `errors` | Number of checks that could not complete due to an execution error. | `"0"` |
 | `report` | Absolute path to the generated JSON report file. Only set when Canary produced output to parse; empty/unset on an execution failure (`status` `execution-failed`). | `/home/runner/work/_temp/stellar-canary-report.json` |
+| `receipt` | Absolute path to the machine-readable execution receipt (`receiptVersion: 1`): engine version and build commit, fixture-pack digest, target/observed protocol, and timestamp. Unreported fields are `"unknown"`. An unsigned provenance record, not a cryptographic attestation. Only set when Canary produced a parsable report. | `/home/runner/work/_temp/stellar-canary-receipt.json` |
 
 A concrete consumer, using the outputs to gate a follow-up step:
 
