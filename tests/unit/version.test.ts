@@ -12,7 +12,8 @@ vi.mock("@actions/core", () => ({
 
 import * as core from "@actions/core";
 import * as https from "node:https";
-import { resolveVersion } from "../../src/version";
+import { InvalidInputError } from "../../src/errors";
+import { assessEngineVersion, resolveVersion } from "../../src/version";
 
 class FakeResponse extends EventEmitter {
   statusCode: number;
@@ -340,4 +341,75 @@ describe("resolveVersion", () => {
     expect(calls[0]?.headers.Authorization).toBe("Bearer secret-token");
     expect(calls[1]?.headers.Authorization).toBeUndefined();
   });
+});
+
+/**
+ * #374: the requested engine version is assessed against the supported
+ * release range. Warnings are advisory and only for releases strictly older
+ * than 0.1.0 or for unvalidated future majors; the default 0.1.1 must stay
+ * quiet.
+ */
+describe("assessEngineVersion", () => {
+  it("accepts the default 0.1.1 without a warning", () => {
+    expect(assessEngineVersion("0.1.1")).toEqual({
+      version: "0.1.1",
+      supported: true,
+      warning: undefined,
+    });
+  });
+
+  it("reports 0.1.0 as outside the supported range without deprecating it", () => {
+    // 0.1.0 predates the supported minimum, but no maintainer decision
+    // deprecates it yet, so it must not emit a warning annotation.
+    expect(assessEngineVersion("0.1.0")).toEqual({
+      version: "0.1.0",
+      supported: false,
+      warning: undefined,
+    });
+  });
+
+  it("warns for a release strictly older than 0.1.0", () => {
+    const assessment = assessEngineVersion("0.0.9");
+    expect(assessment.supported).toBe(false);
+    expect(assessment.warning).toContain("older than 0.1.0");
+    expect(assessment.warning).toContain("no longer supported");
+    expect(assessment.warning).toContain("0.1.1");
+  });
+
+  it.each(["0.1.2", "0.2.0", "0.3.5", "0.10.0"])(
+    "accepts the newer 0.x release %s without a warning",
+    (version) => {
+      expect(assessEngineVersion(version)).toEqual({ version, supported: true, warning: undefined });
+    },
+  );
+
+  it("compares version components numerically, not lexicographically", () => {
+    // "0.10.0" > "0.9.0" numerically even though "1" < "9" as text, and
+    // 0.1.10 > 0.1.9 for the same reason.
+    expect(assessEngineVersion("0.10.0").supported).toBe(true);
+    expect(assessEngineVersion("0.1.9").supported).toBe(true);
+    expect(assessEngineVersion("0.1.10").supported).toBe(true);
+  });
+
+  it("warns for an unvalidated future major release", () => {
+    const assessment = assessEngineVersion("1.0.0");
+    expect(assessment.supported).toBe(false);
+    expect(assessment.warning).toContain("not verified");
+    expect(assessment.warning).toContain("latest validated: 0.1.1");
+  });
+
+  it("trims surrounding whitespace and reports the trimmed version", () => {
+    expect(assessEngineVersion(" 0.1.1 ")).toEqual({
+      version: "0.1.1",
+      supported: true,
+      warning: undefined,
+    });
+  });
+
+  it.each(["latest", "", "v0.1.1", "0.1", "0.1.1.1", "0.1.1-rc.1", "not-a-version"])(
+    "throws InvalidInputError for the invalid engine version %s",
+    (version) => {
+      expect(() => assessEngineVersion(version)).toThrow(InvalidInputError);
+    },
+  );
 });

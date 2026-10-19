@@ -61,6 +61,7 @@ const BASE_INPUTS: ActionInputs = {
   version: "0.1.0",
   uploadReport: true,
   annotations: true,
+  diagnostics: false,
   timeoutMinutes: 15,
   allowEmpty: false,
   fixturesPackVersion: undefined,
