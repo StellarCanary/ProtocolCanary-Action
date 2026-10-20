@@ -221,6 +221,11 @@ function setUp(version: string, options: { pack: "exit1" | "exit3" | "exit4" | "
 
   const cargoHome = path.join(workDir, "cargo-home");
   fs.mkdirSync(path.join(cargoHome, "bin"), { recursive: true });
+  // The engine is placed where the Action looks for an exact-version
+  // installed binary (same convention as real-engine.test.ts), so the suite
+  // exercises the check path only and never impulsively runs cargo install.
+  fs.copyFileSync(binary as string, path.join(cargoHome, "bin", "stellar-canary"));
+  fs.chmodSync(path.join(cargoHome, "bin", "stellar-canary"), 0o755);
 
   const runnerTemp = path.join(workDir, "runner-temp");
   fs.mkdirSync(runnerTemp, { recursive: true });
