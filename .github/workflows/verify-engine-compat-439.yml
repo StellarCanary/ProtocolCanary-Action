@@ -19,11 +19,72 @@ on:
         description: Protocol-Canary ref for the exit-codes suite (default v0.2.0; use main for unreleased behavior)
         required: false
         default: v0.2.0
+  # Paths-filtered so editing docs while recording results (docs/releases.md)
+  # does not re-run the engine builds; touching the test files or this file
+  # does.
+  push:
+    branches: [feat/436-439-batch]
+    paths:
+      - ".github/workflows/verify-engine-compat-439.yml"
+      - "tests/integration/**"
 
 permissions:
   contents: read
 
 jobs:
+  # The engine-compat.yml job with its dispatch inputs pinned to the
+  # combination issue #439 asks for (engine_ref=v0.2.0, legacy_ref=v0.1.1).
+  # Steps are identical to the manual workflow; this copy only exists so the
+  # run can be produced from a branch without the Actions:write permission
+  # workflow_dispatch requires. It runs the SAME suite that
+  # engine-compat.yml runs (tests/integration/real-engine.test.ts).
+  engine-compat-pinned:
+    name: engine-compat.yml, pinned: Action against Protocol-Canary v0.2.0 and v0.1.1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Checkout engine under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: StellarCanary/Protocol-Canary
+          ref: v0.2.0
+          path: engine-under-test
+          persist-credentials: false
+
+      - name: Checkout older engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: StellarCanary/Protocol-Canary
+          ref: v0.1.1
+          path: engine-legacy
+          persist-credentials: false
+
+      - name: Build both engines
+        run: |
+          (cd engine-under-test && cargo build --release --locked)
+          (cd engine-legacy && cargo build --release --locked)
+          echo "STELLAR_CANARY_BIN=$PWD/engine-under-test/target/release/stellar-canary" >> "$GITHUB_ENV"
+          echo "STELLAR_CANARY_LEGACY_BIN=$PWD/engine-legacy/target/release/stellar-canary" >> "$GITHUB_ENV"
+
+      - name: Report the engine versions being tested
+        run: |
+          "$STELLAR_CANARY_BIN" version
+          "$STELLAR_CANARY_LEGACY_BIN" version
+
+      - name: Run the Action against the real engines
+        run: npx vitest run tests/integration/real-engine.test.ts
+
   real-engine-exit-codes:
     name: Exit codes 1/3/4 + skips against ${{ inputs.engine_ref || 'v0.2.0' }}
     runs-on: ubuntu-latest
