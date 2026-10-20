@@ -39,7 +39,7 @@ jobs:
   # workflow_dispatch requires. It runs the SAME suite that
   # engine-compat.yml runs (tests/integration/real-engine.test.ts).
   engine-compat-pinned:
-    name: engine-compat.yml, pinned: Action against Protocol-Canary v0.2.0 and v0.1.1
+    name: "engine-compat.yml pinned to the issue #439 refs (v0.2.0 / v0.1.1)"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Action
