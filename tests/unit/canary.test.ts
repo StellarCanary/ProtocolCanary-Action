@@ -380,6 +380,22 @@ describe("ensureCanaryInstalled", () => {
     expect(coreMocks.warningMock).not.toHaveBeenCalled();
   });
 
+  it("warns before installing an engine release older than 0.1.0 (#374)", async () => {
+    versionProbeResults = ["0.0.9"];
+
+    await ensureCanaryInstalled({ version: "0.0.9", tag: "v0.0.9", commitSha: "abc123" });
+
+    expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("no longer supported"));
+  });
+
+  it("does not warn for the default engine release 0.1.1 (#374)", async () => {
+    versionProbeResults = ["0.1.1"];
+
+    await ensureCanaryInstalled({ version: "0.1.1", tag: "v0.1.1", commitSha: "abc123" });
+
+    expect(coreMocks.warningMock).not.toHaveBeenCalled();
+  });
+
   it("installs with `--tag <tag>` and warns when the commit could not be resolved", async () => {
     await ensureCanaryInstalled({ ...RESOLVED, commitSha: undefined });
 

@@ -148,6 +148,7 @@ jobs:
 | `version` | `Protocol-Canary` version to install, without a leading `v`. Pinned — never tracks `main`. | `0.1.1` |
 | `upload-report` | Upload the JSON report as a workflow artifact. | `true` |
 | `annotations` | Emit GitHub annotations for failures/warnings/errors. | `true` |
+| `diagnostics` | Opt in to a best-effort redacted diagnostics log bundle for troubleshooting failed runs. Disabled by default because the bundle is downloadable by anyone who can read the repository and redaction is best effort; the process environment is never included. | `false` |
 | `allow-empty` | Let a run that executes no checks pass (`--allow-empty`). Only meaningful with `version: 0.2.0` or newer, which fail such a run by default; older versions already pass it, so the flag is not forwarded to them. | `false` |
 | `timeout-minutes` | Maximum time to let Canary run before it is terminated. Also bounds the `cargo install` step (floored at one minute) — see [Timeouts](#timeouts). | `15` |
 | `github-token` | GitHub token used to authenticate read-only requests to `api.github.com` for version resolution and checksum discovery, raising GitHub API rate limits. Defaults to `${{ github.token }}`. Pass an empty string (`""`) to disable authenticated requests. Requires only `contents: read` permission and works on fork pull requests. | `${{ github.token }}` |
@@ -500,6 +501,13 @@ consumer run by this Action; see [`docs/releases.md`](docs/releases.md).)
 This table will grow as `Protocol-Canary` cuts new releases; a
 `schemaVersion` change to its JSON report is a breaking change for this
 Action and will be called out here explicitly.
+
+Requested versions outside the supported range are still installed, but the
+Action emits a warning annotation rather than failing silently: releases
+strictly older than `0.1.0` are reported as unsupported and deprecated, and
+future major releases the Action has not been validated against are reported
+as unverified. The default `0.1.1` and other supported `0.x` releases produce
+no warning.
 
 ## Limitations
 

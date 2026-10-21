@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `diagnostics` input (default `false`), making diagnostic log bundles strictly
+  opt-in per CF-08 and maintainer decision D-10. The input is parsed as a
+  strict boolean, so an undocumented value such as `yes` or `1` fails with an
+  `InvalidInput` error instead of silently enabling artifacts; an omitted or
+  empty value keeps the existing behavior with no diagnostic bundle ([#331]).
+- Engine release compatibility warnings ([#374]): the requested `version` is
+  assessed against the supported range (`>= 0.1.1` on the `0.x` line). The
+  default `0.1.1` produces no warning; a release strictly older than `0.1.0`
+  warns that it is no longer supported, and a future major release warns that
+  the Action has not been validated against it. `0.1.0` remains installable
+  and is not deprecated, so it produces no warning annotation either.
 - Enforce coverage thresholds in CI on Ubuntu runs and report the text coverage
   summary to the workflow job summary (`$GITHUB_STEP_SUMMARY`) inside a fenced
   code block (#410).

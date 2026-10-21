@@ -18,7 +18,7 @@ import { formatSafeDiagnosticTail, printLogBlock } from "./log-block";
 import type { CheckExecutionResult } from "./runner";
 import { CARGO_INSTALL_TIMEOUT_FLOOR_MS, runCheck } from "./runner";
 import type { ResolvedVersion } from "./version";
-import { CANARY_API_REPO_URL, CANARY_REPO_URL } from "./version";
+import { assessEngineVersion, CANARY_API_REPO_URL, CANARY_REPO_URL } from "./version";
 
 /**
  * Describes a Canary binary that has been located or restored and verified
@@ -877,6 +877,15 @@ export async function ensureCanaryInstalled(
   token?: string,
   strictIntegrity = false,
 ): Promise<InstalledCanary> {
+  // Surface an obsolete or unvalidated engine release before any install
+  // work starts (issue #374): the warning is advisory, so it never blocks a
+  // requested version or changes the resolved pin. `core.warning` registers a
+  // warning annotation in the workflow run without failing the job.
+  const compatibility = assessEngineVersion(resolved.version);
+  if (compatibility.warning !== undefined) {
+    core.warning(compatibility.warning);
+  }
+
   const existing = await findExisting(resolved);
   if (existing !== undefined) {
     await verifyInstalledBinary(existing.binaryPath, resolved, token, strictIntegrity);
