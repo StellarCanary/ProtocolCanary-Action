@@ -73,7 +73,6 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...actual, homedir: osMocks.homedirMock };
 });
 
-import { InstallationFailedError } from "../../src/errors";
 import { ensureCanaryInstalled } from "../../src/canary";
 import type { ResolvedVersion } from "../../src/version";
 
@@ -218,104 +217,89 @@ describe("tamper detection and spoofed redirects (issue #375)", () => {
     fs.rmSync(tempCargoHome, { recursive: true, force: true });
   });
 
-  it("aborts immediately when a single byte of the installed binary differs from the published checksum", async () => {
-    // The published manifest describes "binary"; the on-disk file is
-    // "binarey" — a one-byte tamper. Verification must refuse the binary.
+  // #424: a source build is never compared against a published release
+  // checksum, so a manifest mismatch, a spoofed redirect, an unencrypted
+  // manifest target, or a malformed manifest can no longer affect a source
+  // install — none of them is even looked up. The release-asset path performs
+  // the real comparison (see the prebuilt suite in canary.test.ts). These
+  // tests pin the source-build boundary: make no lookup, never fail on a
+  // checksum, and anchor integrity on the commit/tag pin.
+  it("never compares a source build against a published checksum, even a one-byte tamper (#424)", async () => {
     fs.writeFileSync(binaryPath(), "binarey");
     httpsGetMock
-      .mockImplementationOnce(
-        respond(
-          200,
-          JSON.stringify({
-            assets: [{ name: "SHA256SUMS", browser_download_url: "https://example.test/SHA256SUMS" }],
-          }),
-        ),
-      )
+      .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
       .mockImplementationOnce(respond(200, `${sha256("binary")}  stellar-canary\n`));
 
-    await expect(ensureCanaryInstalled(RESOLVED)).rejects.toThrow(/Checksum verification failed/);
-    expect(httpsGetMock).toHaveBeenCalledTimes(2);
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.origin).toBe("source-build");
+    expect(httpsGetMock).not.toHaveBeenCalled();
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(
+      expect.stringContaining("release checksums do not apply to source builds"),
+    );
   });
 
-  it("refuses a truncated (partial) binary and never persists it into the shared Actions cache", async () => {
-    // Fresh-install path: the manifest describes the full payload, but the
-    // binary on disk is a truncated remnant of it.
+  it("never looks up a manifest for a source build, so a truncated binary is not checksum-rejected (#424)", async () => {
     const full = "full-canary-payload";
     httpsGetMock
-      // No prebuilt release asset for this platform: the install falls through
-      // to the `cargo install` path under test.
       .mockImplementationOnce(respond(404, ""))
-      .mockImplementationOnce(
-        respond(
-          200,
-          JSON.stringify({
-            assets: [{ name: "SHA256SUMS", browser_download_url: "https://example.test/SHA256SUMS" }],
-          }),
-        ),
-      )
+      .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
       .mockImplementationOnce(respond(200, `${sha256(full)}  stellar-canary\n`));
 
-    // Install "succeeds" but leaves a truncated file behind.
     spawnMock.mockImplementation(() => {
       fs.writeFileSync(binaryPath(), full.slice(0, 5));
       return new ImmediateChild(0) as unknown as ChildProcess;
     });
 
-    await expect(ensureCanaryInstalled(RESOLVED)).rejects.toThrow(InstallationFailedError);
-    expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
-    expect(coreMocks.debugMock.mock.calls.flat().join(" ")).not.toContain("Verified stellar-canary");
-  });
-
-  it("never follows a spoofed redirect to a non-allowlisted domain during checksum lookup", async () => {
-    fs.writeFileSync(binaryPath(), "binary");
-    // Release lookup OK; manifest fetch answers 302 -> evil.example.
-    httpsGetMock
-      .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
-      .mockImplementationOnce(respond(302, "", { location: "https://evil.example.com/SHA256SUMS" }));
-
-    // Default (non-strict) policy: the redirect is refused, the manifest is
-    // treated as unavailable, and the run degrades to commit/tag pinning.
     const installed = await ensureCanaryInstalled(RESOLVED);
-    expect(installed.binaryPath).toBe(binaryPath());
 
-    // The critical boundary: no request was EVER issued to the redirect
-    // target — Node's https.get does not follow redirects and the Action
-    // never re-issues one itself (D-11: redirect policy unresolved, so no
-    // redirect at all is followed).
-    const urls = requestedUrls();
-    expect(urls).toHaveLength(2);
-    expect(urls.some((url) => url.includes("evil.example.com"))).toBe(false);
-    expect(coreMocks.debugMock).toHaveBeenCalledWith(expect.stringContaining("status 302"));
-  });
-
-  it("rejects an unencrypted http:// manifest target unconditionally", async () => {
-    fs.writeFileSync(binaryPath(), "binary");
-    httpsGetMock.mockReset().mockImplementation(httpsOnlyTransport());
-    // A release whose checksum asset is served over plain http.
-    httpsGetMock.mockImplementationOnce(
-      respond(200, releaseWithAsset("http://example.test/SHA256SUMS")),
-    );
-    // Subsequent manifest request goes through the scheme-refusing transport.
-
-    const installed = await ensureCanaryInstalled(RESOLVED);
-    expect(installed.binaryPath).toBe(binaryPath());
-    // The http manifest was never trusted: verification degraded to pinning.
-    expect(coreMocks.debugMock).toHaveBeenCalledWith(
-      expect.stringContaining("Could not look up a published checksum"),
-    );
+    expect(installed.origin).toBe("source-build");
+    // The only HTTP request is the prebuilt release-asset probe (which 404s);
+    // no checksum manifest is ever fetched for a source build.
+    expect(requestedUrls().some((url) => url.includes("SHA256SUMS"))).toBe(false);
     expect(coreMocks.infoMock).not.toHaveBeenCalledWith(
       expect.stringContaining("Verified stellar-canary"),
     );
   });
 
-  it("treats a malformed checksum manifest as unverifiable, not as a pass", async () => {
+  it("never issues a request for a source build, so no redirect target can be followed (#424)", async () => {
+    fs.writeFileSync(binaryPath(), "binary");
+    httpsGetMock
+      .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
+      .mockImplementationOnce(respond(302, "", { location: "https://evil.example.com/SHA256SUMS" }));
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+    expect(installed.origin).toBe("source-build");
+
+    // The D-11 boundary: no request is ever issued, so nothing can be
+    // redirected anywhere.
+    expect(requestedUrls()).toHaveLength(0);
+  });
+
+  it("does not trust or even fetch an http:// manifest for a source build (#424)", async () => {
+    fs.writeFileSync(binaryPath(), "binary");
+    httpsGetMock.mockReset().mockImplementation(httpsOnlyTransport());
+    httpsGetMock.mockImplementationOnce(
+      respond(200, releaseWithAsset("http://example.test/SHA256SUMS")),
+    );
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+    expect(installed.origin).toBe("source-build");
+    expect(httpsGetMock).not.toHaveBeenCalled();
+    expect(coreMocks.infoMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("Verified stellar-canary"),
+    );
+  });
+
+  it("does not parse a malformed checksum manifest for a source build (#424)", async () => {
     fs.writeFileSync(binaryPath(), "binary");
     httpsGetMock
       .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
       .mockImplementationOnce(respond(200, "not-a-digest-at-all  stellar-canary\n"));
 
     const installed = await ensureCanaryInstalled(RESOLVED);
-    expect(installed.binaryPath).toBe(binaryPath());
+    expect(installed.origin).toBe("source-build");
+    expect(httpsGetMock).not.toHaveBeenCalled();
     expect(coreMocks.infoMock).not.toHaveBeenCalledWith(expect.stringContaining("Verified stellar-canary"));
   });
 });
@@ -369,24 +353,30 @@ describe("strict-integrity fail-closed policy at the verification boundary (issu
     fs.rmSync(tempCargoHome, { recursive: true, force: true });
   });
 
-  it("aborts immediately when no checksum manifest is published at all", async () => {
+  // #424: under strict-integrity a source build fails closed immediately,
+  // because its integrity cannot be proven against a published release
+  // checksum (release checksums apply only to downloaded release assets).
+  // No manifest lookup is performed first.
+  it("fails closed for a source build because integrity cannot be proven (#424)", async () => {
     fs.writeFileSync(binaryPath(), "binary");
 
     await expect(ensureCanaryInstalled(RESOLVED, 60_000, undefined, true)).rejects.toThrow(
-      /strict-integrity.*no published checksum manifest/s,
+      /strict-integrity.*built from source/s,
     );
+    expect(httpsGetMock).not.toHaveBeenCalled();
   });
 
-  it("aborts when the manifest has no entry for this platform", async () => {
+  it("fails closed before any manifest lookup even when a manifest is published (#424)", async () => {
     fs.writeFileSync(binaryPath(), "binary");
     httpsGetMock
       .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
       .mockImplementationOnce(respond(200, `${"a".repeat(64)}  some-other-tool\n`));
 
-    await expect(ensureCanaryInstalled(RESOLVED, 60_000, undefined, true)).rejects.toThrow(/strict-integrity.*no entry/s);
+    await expect(ensureCanaryInstalled(RESOLVED, 60_000, undefined, true)).rejects.toThrow(/strict-integrity/s);
+    expect(httpsGetMock).not.toHaveBeenCalled();
   });
 
-  it("aborts when the checksum lookup is redirected (unverifiable under D-11)", async () => {
+  it("never consults a redirect target under strict-integrity (#424)", async () => {
     fs.writeFileSync(binaryPath(), "binary");
     httpsGetMock
       .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
@@ -395,35 +385,29 @@ describe("strict-integrity fail-closed policy at the verification boundary (issu
     await expect(ensureCanaryInstalled(RESOLVED, 60_000, undefined, true)).rejects.toThrow(/strict-integrity/s);
     const urls = requestedUrls();
     expect(urls.some((url) => url.includes("evil.example.com"))).toBe(false);
+    expect(urls).toHaveLength(0);
   });
 
-  it("aborts before caching or completing when the checksum does not match", async () => {
+  it("fails closed and never persists the binary to cache under strict-integrity (#424)", async () => {
     cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
     fs.writeFileSync(binaryPath(), "tampered");
     httpsGetMock
       .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
       .mockImplementationOnce(respond(200, `${sha256("pristine")}  stellar-canary\n`));
 
-    await expect(ensureCanaryInstalled(RESOLVED, 60_000, undefined, true)).rejects.toThrow(/Checksum verification failed/);
+    await expect(ensureCanaryInstalled(RESOLVED, 60_000, undefined, true)).rejects.toThrow(/strict-integrity/s);
     expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
   });
 
-  it("succeeds when the published checksum verifies", async () => {
-    fs.writeFileSync(binaryPath(), "binary");
-    httpsGetMock
-      .mockImplementationOnce(respond(200, releaseWithAsset("https://example.test/SHA256SUMS")))
-      .mockImplementationOnce(respond(200, `${sha256("binary")}  stellar-canary\n`));
-
-    const installed = await ensureCanaryInstalled(RESOLVED, 60_000, undefined, true);
-    expect(installed.binaryPath).toBe(binaryPath());
-    expect(coreMocks.infoMock).toHaveBeenCalledWith(expect.stringContaining("Verified stellar-canary"));
-  });
-
-  it("preserves default (non-strict) behaviour: a missing manifest degrades to commit/tag pinning", async () => {
+  it("preserves default (non-strict) behaviour: a source build is not compared, just pinned", async () => {
     fs.writeFileSync(binaryPath(), "binary");
 
     const installed = await ensureCanaryInstalled(RESOLVED);
     expect(installed.binaryPath).toBe(binaryPath());
-    expect(coreMocks.debugMock).toHaveBeenCalledWith(expect.stringContaining("status 404"));
+    expect(installed.origin).toBe("source-build");
+    expect(httpsGetMock).not.toHaveBeenCalled();
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(
+      expect.stringContaining("release checksums do not apply to source builds"),
+    );
   });
 });

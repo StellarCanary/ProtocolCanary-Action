@@ -64,25 +64,29 @@ which:
 - never executes a downloaded script — the toolchain performing the build
   is `cargo`, already present on the runner, not something this Action
   fetches and runs;
-- verifies the installed or cached binary against the checksum manifest
-  published with the release, when one exists, and refuses to use a binary
-  that does not match (see [Checksum verification](#checksum-verification)).
+- records the binary's origin (source build or prebuilt release asset) and
+  verifies integrity accordingly (see [Checksum verification](#checksum-verification)).
 
 ### Checksum verification
 
-When the requested `Protocol-Canary` release publishes a checksum manifest
-(for example `SHA256SUMS`) as a release asset, this Action downloads it,
-hashes the binary it is about to run, and compares the two. A mismatch
-throws an `InstallationFailed` error and the binary is never executed.
-
-`Protocol-Canary` does not publish checksums yet, so the lookup normally
-finds nothing and this step is a no-op that logs a debug line. That
-fallback to commit/tag pinning is deliberate and is the documented,
-unchanged behavior: the checksum step only ever *adds* a guarantee when a
-manifest exists, and its absence never weakens the existing pinning.
-A compiled-from-a-pinned-commit build is still a weaker integrity story
-than a checksum published by the artifact's own maintainers, so making
-checksum-verified installs the primary path remains the goal.
+- **Source builds (default today):** The Action installs `Protocol-Canary`
+  with `cargo install --git --locked` pinned to an immutable commit when
+  available (falling back to the tag). The integrity anchor for source
+  builds is that commit/tag pin; release checksums do **not** apply to
+  binaries compiled from source. No checksum manifest is downloaded for
+  source builds, and this is logged at `info` level.
+- **Prebuilt release assets (if/when used):** If a binary is obtained as a
+  downloaded release asset, this Action downloads the checksum manifest
+  published alongside that release, hashes the binary, and compares it
+  against the **exact per-platform asset entry** in the manifest. A mismatch
+  throws an `InstallationFailedError` and the binary is never executed. A
+  missing manifest or a missing entry for the current platform is a failure
+  for release assets (fail closed).
+- **What is not verified:** A hash of a different build (e.g. the
+  maintainers' prebuilt binary) is not compared with a locally compiled
+  source build. The previous behavior that could compare unrelated
+  artifacts has been corrected; `httpsGetText` does not follow redirects,
+  and redirect handling is not introduced here.
 
 The full integrity model — trust boundaries, the optional
 `strict-integrity` fail-closed policy, the D-07 (checksums are data
