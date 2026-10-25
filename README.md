@@ -530,6 +530,15 @@ workflow that does this with `dtolnay/rust-toolchain` ahead of invoking
 this Action. A successful build is cached (best-effort; never required for
 correctness) using `actions/cache`.
 
+**Integrity model:** for source builds (the only installation method used
+today), the integrity anchor is the immutable commit/tag pin; release
+checksums are not applied to binaries compiled from source. If prebuilt
+release assets are used in the future, this Action will verify them
+against the exact per-platform entry in the published checksum manifest
+and fail closed on mismatch or missing entries. `httpsGetText` does not
+follow redirects and no redirect-following code is added. See
+[SECURITY.md](SECURITY.md) for details.
+
 This Action is also a JavaScript action, declared as `runs: using: node24`
 in `action.yml`, so the runner must additionally provide the Node 24
 Actions runtime. GitHub-hosted runners always satisfy this; a self-hosted
