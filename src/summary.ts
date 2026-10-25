@@ -1,9 +1,10 @@
 import * as core from "@actions/core";
 
+import { formatSafeDiagnosticTail } from "./log-block";
 import { SummaryPublishFailedError } from "./errors";
 import { countReplayed } from "./output";
 import { codeSpan, escapeInline, fencedBlock, maskRpcUrl, quoteForShell } from "./markdown";
-import type { CanaryReport, OverallStatus, Surface } from "./output";
+import type { CanaryReport, CanarySkip, OverallStatus, Surface } from "./output";
 
 const SURFACE_HEADINGS: Readonly<Record<Surface, string>> = {
   xdr: "XDR",
@@ -19,6 +20,90 @@ const OVERALL_LABEL: Readonly<Record<OverallStatus, string>> = {
   fail: "❌ **NOT READY**",
   error: "🚫 **ERROR**",
 };
+
+/** Human-readable labels for CF-01 skip reason codes. */
+const SKIP_CODE_LABELS: Readonly<Record<string, string>> = {
+  UNSUPPORTED_PROTOCOL: "Unsupported protocol",
+  SURFACE_DISABLED: "Surface disabled",
+  MISSING_CAPABILITY: "Missing capability",
+  OFFLINE: "Offline",
+  NETWORK_MISMATCH: "Network mismatch",
+  UNKNOWN: "Unknown reason",
+};
+
+/** Render order for skip groups; unknown/unrecorded codes always come last. */
+const SKIP_CODE_ORDER: readonly string[] = [
+  "UNSUPPORTED_PROTOCOL",
+  "SURFACE_DISABLED",
+  "MISSING_CAPABILITY",
+  "OFFLINE",
+  "NETWORK_MISMATCH",
+  "UNKNOWN",
+];
+
+/**
+ * Reads a skip reason code per CF-01: an absent or unrecognized code is
+ * `UNKNOWN`, never the raw value and never an empty string. This mirrors the
+ * engine's own `SkipCode::parse` fallback so the summary groups reports from
+ * older and newer engines the same way.
+ */
+function normalizeSkipCode(code: unknown): string {
+  return typeof code === "string" && Object.prototype.hasOwnProperty.call(SKIP_CODE_LABELS, code)
+    ? code
+    : "UNKNOWN";
+}
+
+function skipCodeRank(code: string): number {
+  const index = SKIP_CODE_ORDER.indexOf(code);
+  return index === -1 ? SKIP_CODE_ORDER.length : index;
+}
+
+/**
+ * Renders skipped fixtures as one table grouped by stable reason code
+ * (#341). Rows are sorted by code rank, then fixture id and surface, so
+ * repeated runs over the same report produce identical Markdown. Every
+ * engine-supplied value is escaped; missing values get explicit fallbacks
+ * rather than throwing or rendering an empty cell.
+ */
+function skippedFixtureLines(skipped: readonly CanarySkip[]): string[] {
+  const rows = skipped.map((skip) => {
+    const fixtureId =
+      typeof skip.fixtureId === "string" && skip.fixtureId.trim() !== ""
+        ? skip.fixtureId.trim()
+        : "(unknown fixture)";
+    const surface =
+      typeof skip.surface === "string" && skip.surface.trim() !== ""
+        ? skip.surface.trim()
+        : "(unknown surface)";
+    const reason =
+      typeof skip.reason === "string" && skip.reason.trim() !== ""
+        ? skip.reason.trim()
+        : "(no reason recorded)";
+    return { code: normalizeSkipCode(skip.code), fixtureId, surface, reason };
+  });
+  rows.sort((a, b) => {
+    const byCode = skipCodeRank(a.code) - skipCodeRank(b.code);
+    if (byCode !== 0) return byCode;
+    if (a.fixtureId !== b.fixtureId) return a.fixtureId < b.fixtureId ? -1 : 1;
+    if (a.surface !== b.surface) return a.surface < b.surface ? -1 : 1;
+    return 0;
+  });
+
+  return [
+    "<details><summary>Skipped fixtures</summary>",
+    "",
+    "| Reason code | Fixture | Surface | Reason |",
+    "|---|---|---|---|",
+    ...rows.map(
+      (row) =>
+        `| ${codeSpan(row.code)} — ${escapeInline(SKIP_CODE_LABELS[row.code] ?? "Unknown reason")} | ` +
+        `${codeSpan(row.fixtureId)} | ${escapeInline(row.surface)} | ${escapeInline(row.reason)} |`,
+    ),
+    "",
+    "</details>",
+    "",
+  ];
+}
 
 /** Aggregates one surface's results into its summary table row. Returns
  * `undefined` when no results match the surface, which is how
@@ -72,6 +157,8 @@ export interface SummaryProvenance {
   /** Argument array the engine was invoked with (issue #416). When present,
    * the summary renders a collapsed "Reproduction command" section. */
   readonly engineArgs?: readonly string[] | undefined;
+  /** Code describing a report write persistence failure (issue #508). */
+  readonly reportWriteError?: string | undefined;
 }
 
 const UNVERIFIED_BINARY_ROW =
@@ -114,6 +201,30 @@ function provenanceLines(provenance: SummaryProvenance): string[] {
   ];
 }
 
+/**
+ * Explains an observed-protocol mismatch (#430): the engine checked the
+ * target protocol, but the network reported a different protocol version
+ * during live checks. Returns `undefined` when there is nothing to warn
+ * about — no network, no usable observed protocol, or agreement — so callers
+ * never emit a warning for a report that could not observe a protocol at
+ * all. The message is shared by the job summary and the annotation so both
+ * surfaces say exactly the same thing.
+ */
+export function protocolMismatchMessage(report: CanaryReport): string | undefined {
+  const observed = report.network?.observedProtocol;
+  const target = report.targetProtocol;
+  if (typeof observed !== "number" || !Number.isInteger(observed) || observed <= 0) {
+    return undefined;
+  }
+  if (!Number.isInteger(target) || target <= 0 || observed === target) {
+    return undefined;
+  }
+  return (
+    `Protocol mismatch: the network reported protocol ${String(observed)}, ` +
+    `but this run targets protocol ${String(target)}.`
+  );
+}
+
 /** Pure Markdown rendering, kept separate from `core.summary` so it can be
  * golden/snapshot-tested without a GitHub Actions runtime. `provenance`
  * renders the Provenance & Trust section (issue #373) and the reproduction
@@ -130,6 +241,13 @@ export function renderSummaryMarkdown(report: CanaryReport, provenance?: Summary
         ? ` — observed protocol ${escapeInline(String(report.network.observedProtocol))}`
         : "";
     lines.push(`Network: ${escapeInline(report.network.name)}${observed}`);
+  }
+  // A live-check network that reports a different protocol than the target
+  // (#430) is worth surfacing prominently: the checks still describe the
+  // target protocol, not what the network is currently running.
+  const mismatch = protocolMismatchMessage(report);
+  if (mismatch !== undefined) {
+    lines.push(`> ⚠️ ${mismatch}`, "");
   }
   lines.push(`Canary version: ${escapeInline(report.toolVersion)}`, "");
 
@@ -158,6 +276,13 @@ export function renderSummaryMarkdown(report: CanaryReport, provenance?: Summary
     );
   }
 
+  if (provenance?.reportWriteError !== undefined) {
+    lines.push(
+      `> ⚠️ **Report persistence warning:** Could not write the JSON report to disk (${escapeInline(provenance.reportWriteError)}). The report artifact was not uploaded.`,
+      "",
+    );
+  }
+
   const failures = notablyList(report, ["fail", "error"]);
 
   if (provenance !== undefined) {
@@ -173,14 +298,7 @@ export function renderSummaryMarkdown(report: CanaryReport, provenance?: Summary
   }
 
   if (report.skipped !== undefined && report.skipped.length > 0) {
-    lines.push(
-      "<details><summary>Skipped fixtures</summary>",
-      "",
-      ...report.skipped.map((s) => `- ${codeSpan(s.fixtureId)} (${escapeInline(s.surface)}) — ${escapeInline(s.reason)}`),
-      "",
-      "</details>",
-      "",
-    );
+    lines.push(...skippedFixtureLines(report.skipped));
   }
 
   // Reproduction command section (issue #416)
@@ -254,7 +372,11 @@ const MAX_EMBEDDED_FENCE_LENGTH = 20;
  * Markdown rendering of an execution failure — the "Canary could not run
  * at all" case, distinct from a compatibility failure the report describes.
  *
- * The diagnostic is embedded verbatim inside a fenced code block, but it is
+ * Reasons and diagnostic blocks each retain at most 40 tail lines plus
+ * the truncation notice, within 8 KiB UTF-8 including that notice (#499).
+ * Markdown scaffolding is outside this content budget.
+ *
+ * The sanitized diagnostic is embedded inside a fenced code block, but it is
  * raw text from an external process (stderr, a timeout notice), so it may
  * itself contain ``` (e.g. a compiler/panic message quoting a code block).
  * A fixed fence would be closed early by that sequence, and the rest of the
@@ -264,7 +386,7 @@ const MAX_EMBEDDED_FENCE_LENGTH = 20;
  * content.
  */
 export function renderExecutionFailureMarkdown(reason: string, diagnostic: string): string {
-  const trimmed = diagnostic.trim();
+  const trimmed = formatSafeDiagnosticTail(diagnostic).trim();
   // Longest run of backticks anywhere in the diagnostic, in characters.
   // Also covers the closing fence the diagnostic text may already contain,
   // because a closing fence of length n is itself a run of n backticks.
@@ -283,7 +405,7 @@ export function renderExecutionFailureMarkdown(reason: string, diagnostic: strin
     "",
     "Protocol Canary could not be executed.",
     "",
-    `Reason: ${reason}`,
+    `Reason: ${formatSafeDiagnosticTail(reason)}`,
     "",
     fence + "text",
     trimmed === "" ? "(no diagnostic output)" : trimmed,

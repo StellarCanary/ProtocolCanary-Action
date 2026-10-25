@@ -157,6 +157,33 @@ export interface CanarySkip {
   readonly fixtureId: string;
   readonly surface: string;
   readonly reason: string;
+  /**
+   * Stable machine-readable skip reason (CF-01): one of
+   * `UNSUPPORTED_PROTOCOL`, `SURFACE_DISABLED`, `MISSING_CAPABILITY`,
+   * `OFFLINE`, `NETWORK_MISMATCH`, or `UNKNOWN`. Absent in reports written
+   * before the field existed; an unrecognized value is read as `UNKNOWN` by
+   * consumers rather than rejected.
+   */
+  readonly code?: string;
+}
+
+export interface CanaryFixturePack {
+  /** Canonical `sha256:<64 lowercase hex>` digest of the fixture pack. */
+  readonly digest?: string;
+  /** Protocol the pack is pinned to, when recorded. */
+  readonly protocol?: number;
+  /** Pack release tag/version, when recorded. */
+  readonly version?: string;
+  /** Alias some report producers use for the release tag. */
+  readonly tag?: string;
+  /** Fixture registry format version. */
+  readonly registryVersion?: number;
+  /** `"directory"` or `"release"`, when recorded. */
+  readonly source?: string;
+  /** Full git revision of the pack source, or null. */
+  readonly revision?: string | null;
+  /** Alias some producers use for the canonical digest. */
+  readonly packDigest?: string;
 }
 
 export interface CanaryCounts {
@@ -178,6 +205,10 @@ export interface CanaryReport {
   readonly counts: CanaryCounts;
   readonly results: readonly CanaryResult[];
   readonly skipped?: readonly CanarySkip[];
+  /** Reserved additive CF-02 pack identity; absent for local/unrecorded packs. */
+  readonly fixturePack?: CanaryFixturePack;
+  /** Legacy/top-level alias for the pack digest used by early receipt drafts. */
+  readonly packDigest?: string;
   readonly git: {
     readonly commit: string | null;
     readonly branch: string | null;
@@ -259,6 +290,9 @@ function skipShapeError(entry: unknown): string | undefined {
   if (typeof skip.reason !== "string") {
     return 'missing or non-string "reason"';
   }
+  if (skip.code !== undefined && typeof skip.code !== "string") {
+    return 'non-string "code" when present';
+  }
   return undefined;
 }
 
@@ -319,12 +353,25 @@ export function parseReport(stdout: string): CanaryReport {
         `A newer Protocol-Canary release may require a newer ProtocolCanary-Action version.`,
     );
   }
-  if (
-    typeof report.status !== "string" ||
-    !["pass", "warning", "fail", "error"].includes(report.status) ||
-    !Array.isArray(report.results)
-  ) {
-    throw new InvalidReportError("Canary's JSON output does not match the documented report shape.");
+  // Split into field-specific errors (rather than one combined shape check)
+  // so a rejected report always names the offending field — the differential
+  // test for #447 asserts that every schema-required-field/type violation is
+  // rejected with an error that identifies the field it violates.
+  if (typeof report.status !== "string") {
+    throw new InvalidReportError(
+      'Canary\'s JSON output is missing or has an invalid "status" field: expected a string.',
+    );
+  }
+  if (!["pass", "warning", "fail", "error"].includes(report.status)) {
+    throw new InvalidReportError(
+      `Canary's JSON output has an invalid "status" field: expected one of ` +
+        `"pass", "warning", "fail", "error" (got ${JSON.stringify(report.status)}).`,
+    );
+  }
+  if (!Array.isArray(report.results)) {
+    throw new InvalidReportError(
+      'Canary\'s JSON output is missing or has an invalid "results" field: expected an array.',
+    );
   }
 
   // Validate required fields that the renderer and annotation code depend on
@@ -412,6 +459,156 @@ export function parseReport(stdout: string): CanaryReport {
     skipped,
     git: report.git ?? { commit: null, branch: null, isDirty: null },
   } as CanaryReport;
+}
+
+/** Inputs that may carry a fixture-pack pin even when the report does not. */
+export interface PackIdentitySource {
+  readonly fixturesPackVersion?: string | undefined;
+  readonly fixturesPackProtocol?: number | undefined;
+}
+
+/** Pack provenance available for the Action outputs (#340). */
+export interface ResolvedPackIdentity {
+  /** Canonical `sha256:<64 lowercase hex>` digest, when known. */
+  readonly digest?: string;
+  /** Integer protocol the pack is pinned to, when known. */
+  readonly protocol?: number;
+  /** Release tag/version of the pack, when known. */
+  readonly version?: string;
+}
+
+const CANONICAL_DIGEST = /^(?:sha256:)?([0-9a-fA-F]{64})$/;
+
+/**
+ * Normalizes a pack digest to the documented `sha256:<64 lowercase hex>`
+ * form. Accepts a bare 64-hex digest as a convenience, but returns
+ * `undefined` for anything else instead of emitting a loosely shaped output.
+ */
+function canonicalPackDigest(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const match = CANONICAL_DIGEST.exec(value.trim());
+  const hex = match?.[1];
+  return hex === undefined ? undefined : `sha256:${hex.toLowerCase()}`;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : undefined;
+}
+
+/**
+ * Resolves the fixture-pack identity this run can honestly report (#340).
+ *
+ * The CF-02 pack identity is an additive report field (`fixturePack`), and
+ * the engine releases that emit it are still rolling out. The Action
+ * therefore reads it defensively, falls back to the validated
+ * `fixtures-pack-version` / `fixtures-pack-protocol` inputs when a caller
+ * pinned a pack explicitly, and returns an empty identity when no external
+ * pack is in play. A pack digest is only surfaced in the canonical
+ * `sha256:<64 lowercase hex>` form; a malformed value is ignored rather than
+ * echoed into an output. This function never throws for a malformed optional
+ * field — reports are untrusted input.
+ */
+export function resolvePackIdentity(
+  report: CanaryReport,
+  source: PackIdentitySource = {},
+): ResolvedPackIdentity {
+  const rawFixturePack = (report as { readonly fixturePack?: unknown }).fixturePack;
+  const fixturePack =
+    typeof rawFixturePack === "object" && rawFixturePack !== null && !Array.isArray(rawFixturePack)
+      ? (rawFixturePack as Record<string, unknown>)
+      : undefined;
+  const rawTopLevelDigest = (report as { readonly packDigest?: unknown }).packDigest;
+
+  const digest =
+    canonicalPackDigest(fixturePack?.digest) ??
+    canonicalPackDigest(fixturePack?.packDigest) ??
+    canonicalPackDigest(rawTopLevelDigest);
+  const version =
+    nonEmptyString(fixturePack?.version) ??
+    nonEmptyString(fixturePack?.tag) ??
+    nonEmptyString(source.fixturesPackVersion);
+  const protocol =
+    positiveInteger(fixturePack?.protocol) ??
+    positiveInteger(source.fixturesPackProtocol) ??
+    (digest !== undefined ? positiveInteger(report.targetProtocol) : undefined);
+
+  const identity: { digest?: string; protocol?: number; version?: string } = {};
+  if (digest !== undefined) identity.digest = digest;
+  if (protocol !== undefined) identity.protocol = protocol;
+  if (version !== undefined) identity.version = version;
+  return identity;
+}
+
+/**
+ * How completely the fixture set was exercised, exposed as the Action's
+ * `coverage-state` output so a downstream job can gate a release promotion on
+ * coverage rather than on the pass/fail verdict alone:
+ *
+ * - `full`: every discovered fixture ran and nothing was skipped;
+ * - `partial`: at least one fixture ran, but some were skipped;
+ * - `none`: no fixture ran at all (an empty run, or a report too malformed to
+ *   say otherwise).
+ *
+ * `none` is deliberately the conservative default: a run that cannot prove it
+ * executed the fixtures must not claim full coverage.
+ */
+export type CoverageState = "full" | "partial" | "none";
+
+/**
+ * Classifies a report's fixture coverage (#333).
+ *
+ * "Discovered" fixtures are the ones the engine reported on at all — the
+ * executed `results[]` plus the `skipped[]` fixtures it deliberately did not
+ * run. Classification is therefore:
+ *
+ * - `none` when nothing executed, which also covers a report that carries no
+ *   usable coverage information at all (an absent/!array `results`, an absent
+ *   `counts`): such a report must never be reported as `full`;
+ * - `full` when something executed and no fixture was skipped anywhere;
+ * - `partial` when something executed *and* something was skipped.
+ *
+ * Skips are detected from three independent signals, because which one is
+ * populated depends on the engine release: a `skipped[]` entry, a result whose
+ * own status is `skipped`, and `counts.skipped` (which older releases report
+ * without sending the `skipped[]` array at all). Any non-zero signal is enough.
+ *
+ * Tolerant by construction — every field access is guarded — so a partially
+ * shaped report yields a state instead of throwing inside the reporting path.
+ */
+export function classifyCoverage(report: CanaryReport): CoverageState {
+  // Read defensively rather than trusting the declared types: this runs in the
+  // reporting path on a report that may have come from an unexpected engine
+  // build, so a missing or oddly shaped field must classify as `none` rather
+  // than throw and take the run's reporting down with it.
+  const raw = report as CanaryReport | undefined;
+  const results: readonly unknown[] = Array.isArray(raw?.results) ? raw.results : [];
+
+  const isSkipped = (entry: unknown): boolean =>
+    typeof entry === "object" && entry !== null && (entry as Partial<CanaryResult>).status === "skipped";
+
+  // An entry the Action cannot read as a result is treated as an executed
+  // one: it came back inside `results[]`, which the engine only populates for
+  // checks it ran.
+  const executed = results.filter((entry) => !isSkipped(entry)).length;
+  if (executed === 0) {
+    return "none";
+  }
+
+  const skippedResults = results.filter(isSkipped).length;
+  const skippedEntries = Array.isArray(raw?.skipped) ? (raw.skipped ?? []).length : 0;
+  const reportedSkipped = isCountsShape(raw?.counts) ? (raw.counts?.skipped ?? 0) : 0;
+
+  return Math.max(skippedResults, skippedEntries, reportedSkipped) > 0 ? "partial" : "full";
 }
 
 /**
