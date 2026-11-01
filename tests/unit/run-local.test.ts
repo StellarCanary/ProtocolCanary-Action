@@ -30,10 +30,10 @@ interface RunResult {
 
 function runScript(
   args: string[],
-  options: { timeoutMs?: number; signal?: NodeJS.Signals; env?: Record<string, string> } = {},
+  options: { timeoutMs?: number; signal?: NodeJS.Signals; env?: Record<string, string>; scriptPath?: string } = {},
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [SCRIPT, ...args], {
+    const child = spawn(process.execPath, [options.scriptPath ?? SCRIPT, ...args], {
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -166,7 +166,6 @@ describe("scripts/run-local.mjs (local runner script)", () => {
 
 describe("scripts/run-local.mjs negative cases", () => {
   let tmpDir: string;
-  let movedDist: string | null = null;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "run-local-test-"));
@@ -174,16 +173,18 @@ describe("scripts/run-local.mjs negative cases", () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (movedDist !== null) {
-      fs.renameSync(movedDist, DIST);
-      movedDist = null;
-    }
   });
 
   it("a missing dist/index.js is a clear error naming 'npm run build'", async () => {
-    movedDist = `${DIST}.moved-by-test`;
-    fs.renameSync(DIST, movedDist);
-    const result = await runScript(["--engine", MOCK_ENGINE, "--input", "version=0.1.0"]);
+    // Give the script a private root with no dist bundle. Renaming the real
+    // committed bundle races with bundle-guard.test.ts, which reads it in a
+    // different Vitest worker.
+    const isolatedScript = path.join(tmpDir, "scripts", "run-local.mjs");
+    fs.mkdirSync(path.dirname(isolatedScript), { recursive: true });
+    fs.copyFileSync(SCRIPT, isolatedScript);
+    const result = await runScript(["--engine", MOCK_ENGINE, "--input", "version=0.1.0"], {
+      scriptPath: isolatedScript,
+    });
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("npm run build");
   });
