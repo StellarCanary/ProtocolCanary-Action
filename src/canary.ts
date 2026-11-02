@@ -1027,7 +1027,11 @@ async function restoreFromCache(
     core.info(`Restored stellar-canary ${resolved.version} from cache (key: ${key}).`);
     return { binaryPath, version, origin: "source-build" };
   } catch (error) {
-    core.debug(`Cache restore failed, continuing without it: ${String(error)}`);
+    if (error instanceof InstallationFailedError) {
+      core.warning(`Cached stellar-canary failed integrity verification; continuing without it: ${error.message}`);
+    } else {
+      core.debug(`Cache restore failed, continuing without it: ${String(error)}`);
+    }
     return undefined;
   }
 }
@@ -1684,9 +1688,9 @@ async function cargoInstall(
  * The install step is bounded by `installTimeoutMs` and terminated when it
  * exceeds it.
  *
- * `strictIntegrity` (issue #372, default `false`) makes any inability to
- * prove binary integrity against a published checksum fatal instead of a
- * debug-logged degrade; see {@link verifyInstalledBinary}.
+ * `strictIntegrity` (issue #372, default `false`) rejects source builds,
+ * including cached source builds. Release binaries require published
+ * checksum verification in either mode; see {@link verifyInstalledBinary}.
  *
  * `env` is the filtered child environment every install step and probe runs
  * with; see `src/child-env.ts`.

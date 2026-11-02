@@ -1423,6 +1423,22 @@ describe("ensureCanaryInstalled", () => {
       expect(coreMocks.debugMock).not.toHaveBeenCalledWith(expect.stringContaining("Cache restore failed"));
     });
 
+    it("warns when strict integrity rejects a cached source build before its version probe", async () => {
+      cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+      cacheMocks.restoreCacheMock.mockImplementationOnce(async (paths: string[]) => {
+        writeCachedFiles(paths, "cached source binary");
+        return "cache-hit-key";
+      });
+
+      await expect(ensureCanaryInstalled(RESOLVED, undefined, undefined, true))
+        .rejects.toThrow(InstallationFailedError);
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("Cached stellar-canary failed integrity verification"));
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("strict-integrity is enabled"));
+      expect(coreMocks.debugMock).not.toHaveBeenCalledWith(expect.stringContaining("Cache restore failed"));
+      expect(spawnMock.mock.calls.some(([, args]) => (args as string[])[0] === "version")).toBe(false);
+      expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
+    });
+
     it.each([
       ["a modified cached binary", "tampered"],
       ["a cache entry without a sidecar", "missing"],
