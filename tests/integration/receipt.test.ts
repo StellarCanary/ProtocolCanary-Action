@@ -143,6 +143,7 @@ function setUp(stubReport: unknown): Fixture {
   fs.chmodSync(binaryPath, 0o755);
   const digest = crypto.createHash("sha256").update(fs.readFileSync(binaryPath)).digest("hex");
   fs.writeFileSync(path.join(binaryDir, "stellar-canary.sha256"), `${digest}\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(binaryDir, "stellar-canary.origin"), "source-build\n", { mode: 0o600 });
   const outputPath = path.join(workDir, "github-output");
   fs.writeFileSync(outputPath, "");
   fs.writeFileSync(SUMMARY_PATH, "");
