@@ -169,8 +169,9 @@ function createRunner(options: RunnerOptions): Runner {
     // #433: the Action no longer trusts whatever sits in `<CARGO_HOME>/bin`.
     // It uses an Action-owned root under RUNNER_TEMP, and only when the
     // install-time SHA-256 sidecar next to the binary matches it. Reproduce
-    // exactly what a completed install leaves behind — the committed mock
-    // engine, copied as-is (the test never edits it).
+    // exactly what a completed source install leaves behind — the committed
+    // mock engine, copied as-is (the test never edits it), with both install
+    // metadata sidecars.
     const binaryDir = path.join(runnerTemp, "stellar-canary-action", "bin");
     fs.mkdirSync(binaryDir, { recursive: true });
     const enginePath = path.join(binaryDir, "stellar-canary");
@@ -178,6 +179,7 @@ function createRunner(options: RunnerOptions): Runner {
     fs.chmodSync(enginePath, 0o755);
     const digest = crypto.createHash("sha256").update(fs.readFileSync(enginePath)).digest("hex");
     fs.writeFileSync(path.join(binaryDir, "stellar-canary.sha256"), `${digest}\n`, { mode: 0o600 });
+    fs.writeFileSync(path.join(binaryDir, "stellar-canary.origin"), "source-build\n", { mode: 0o600 });
   }
 
   const outputPath = path.join(workDir, "github-output");

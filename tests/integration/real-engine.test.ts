@@ -113,6 +113,7 @@ function setUp(binary: string, version: string, inputs: Record<string, string>, 
   }
   const digest = crypto.createHash("sha256").update(fs.readFileSync(destPath)).digest("hex");
   fs.writeFileSync(path.join(binaryDir, "stellar-canary.sha256"), `${digest}\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(binaryDir, "stellar-canary.origin"), "source-build\n", { mode: 0o600 });
   const emptyDir = path.join(workDir, "no-fixtures-here");
   fs.mkdirSync(emptyDir);
   const outputPath = path.join(workDir, "github-output");

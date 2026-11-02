@@ -43,9 +43,10 @@ Usage:
 Required:
   --engine <path>          Path to a stellar-canary binary. It is copied into
                            the temporary Action-owned install root (with its
-                           SHA-256 sidecar), so the Action finds it exactly as
-                           it does on a runner. Never installed; if the option
-                           is missing the script exits non-zero.
+                           SHA-256 and source-origin sidecars), so the Action
+                           finds it exactly as it does on a runner. Never
+                           installed; if the option is missing the script
+                           exits non-zero.
 
 Options:
   --fixtures-dir <dir>     Values for the Action's fixtures-dir input
@@ -153,6 +154,7 @@ function buildEnvironment(enginePath, fixes) {
   fs.chmodSync(binaryPath, 0o755);
   const digest = createHash("sha256").update(fs.readFileSync(binaryPath)).digest("hex");
   fs.writeFileSync(path.join(binaryDir, "stellar-canary.sha256"), `${digest}\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(binaryDir, "stellar-canary.origin"), "source-build\n", { mode: 0o600 });
 
   fs.mkdirSync(env.RUNNER_TEMP, { recursive: true });
 

@@ -158,8 +158,8 @@ interface RunSetup {
  * Builds the runner-like environment for one in-process `run()`: temporary
  * `RUNNER_TEMP`/`CARGO_HOME`/`HOME`/`GITHUB_OUTPUT`/`GITHUB_STEP_SUMMARY`,
  * the hostile engine installed where the Action looks for one (with the
- * install-time digest #433 requires), and `HOSTILE_CASE` forwarded to the
- * engine through the same allow-list opt-in a workflow uses.
+ * install-time digest and origin markers), and `HOSTILE_CASE` forwarded to
+ * the engine through the same allow-list opt-in a workflow uses.
  */
 function prepareRun(caseName: string): RunSetup {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "canary-hostile-"));
@@ -178,6 +178,7 @@ function prepareRun(caseName: string): RunSetup {
   fs.copyFileSync(CASES_PATH, path.join(binaryDir, "hostile-strings.json"));
   const digest = crypto.createHash("sha256").update(fs.readFileSync(enginePath)).digest("hex");
   fs.writeFileSync(path.join(binaryDir, "stellar-canary.sha256"), `${digest}\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(binaryDir, "stellar-canary.origin"), "source-build\n", { mode: 0o600 });
 
   const outputPath = path.join(workDir, "github-output");
   fs.writeFileSync(outputPath, "");
