@@ -44,23 +44,25 @@ requirement.
 
 ## Installation integrity
 
-`Protocol-Canary` does not yet publish signed release binaries or
-checksums. This Action installs it from source with `cargo install --git`,
-which:
+Engine v0.2.0 publishes a raw Linux x64 binary and `SHA256SUMS`. The Action's
+prebuilt installer expects a platform archive; when no usable archive exists,
+it builds from source with `cargo install --git`. A published checksum
+establishes data integrity, not release signing or publisher identity.
+Installation uses the following safeguards:
 
 - always uses HTTPS to reach GitHub;
 - installs into an Action-owned directory under `RUNNER_TEMP` and does not
   modify the runner's shared Cargo bin directory or `PATH`;
 - pins the exact requested version (the `version` input) — never `main`,
   never an unpinned "latest";
-- resolves that version's tag to the immutable commit it pointed to at run
+- for source builds, resolves that version's tag to the immutable commit it pointed to at run
   time via the GitHub REST API, and pins `cargo install --rev` to that
   commit — stronger than pinning the (mutable) tag alone;
 - falls back to pinning the tag directly, with a visible warning, only if
   that resolution fails (for example, a transient GitHub API error) —
   this Action never silently falls back to an unpinned or different
   version;
-- uses `--locked`, so the exact dependency versions in `Protocol-Canary`'s
+- for source builds, uses `--locked`, so the exact dependency versions in `Protocol-Canary`'s
   own committed `Cargo.lock` are used rather than whatever the latest
   compatible versions happen to be at build time;
 - never executes a downloaded script — the toolchain performing the build
