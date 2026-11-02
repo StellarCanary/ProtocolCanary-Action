@@ -426,21 +426,22 @@ export function httpsGetText(url: string, token: string | undefined, maxBytes: n
 
 /** Parses a `sha256sum`-style manifest (`<hex digest>  <filename>` lines,
  * with `*` binary-mode markers and `#` comments tolerated) into a map of
- * file base name to lower-case hex digest. */
+ * exact file name to lower-case hex digest. */
 function parseChecksumManifest(text: string): Map<string, string> {
   const entries = new Map<string, string>();
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
+  for (const line of text.split(/\r?\n/)) {
     if (line === "" || line.startsWith("#")) {
       continue;
     }
-    const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(line);
+    // sha256sum uses one separator space and one mode marker (space or *).
+    // Any remaining whitespace belongs to the filename and must stay exact.
+    const match = /^([0-9a-fA-F]{64}) [ *](.+)$/.exec(line);
     const digest = match?.[1];
     const file = match?.[2];
     if (digest === undefined || file === undefined) {
       continue;
     }
-    entries.set(file.trim(), digest.toLowerCase());
+    entries.set(file, digest.toLowerCase());
   }
   return entries;
 }

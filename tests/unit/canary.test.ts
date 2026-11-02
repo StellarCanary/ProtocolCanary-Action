@@ -1112,7 +1112,10 @@ describe("ensureCanaryInstalled", () => {
     }
   });
 
-  it.each(["stellar-canary", "stellar-canary.exe", "other/ASSET", "./ASSET", "other\\ASSET"])(
+  it.each([
+    "stellar-canary", "stellar-canary.exe", "other/ASSET", "./ASSET", "other\\ASSET",
+    " ASSET", "ASSET ", "ASSET\t",
+  ])(
     "fails closed for a release binary when only the non-exact entry %s has its digest",
     async (entry) => {
       writeInstalledBinary("downloaded release binary", "release-asset");
@@ -1124,6 +1127,20 @@ describe("ensureCanaryInstalled", () => {
       expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
     },
   );
+
+  it.each([" ", "*"])("verifies an exact release checksum with sha256sum mode marker %j", async (marker) => {
+    writeInstalledBinary("downloaded release binary", "release-asset");
+    const digest = sha256(binaryPath());
+    mockPublishedChecksums(`# release checksums\r\n\r\n${digest.toUpperCase()} ${marker}${getReleaseAssetName()}\r\n`);
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.origin).toBe("release-asset");
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(
+      expect.stringContaining("(release asset) against the published SHA-256 checksum"),
+    );
+    expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
+  });
 
   it("reports both digests when a release binary does not match its exact manifest entry", async () => {
     writeInstalledBinary("downloaded release binary", "release-asset");
