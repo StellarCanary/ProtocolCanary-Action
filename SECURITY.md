@@ -97,11 +97,16 @@ Installation uses the following safeguards:
   throws an `InstallationFailedError` and the binary is never executed. A
   missing manifest, missing exact entry, or unverifiable lookup is a failure
   for release assets in both strict and default modes (fail closed).
+  Release archive downloads reject every 3xx response while D-11 is blocked.
+  The Engine installer logs the rejection and may compile the pinned source
+  under default integrity; strict-integrity rejects that source build.
+  Fixture-pack downloads fail closed on a redirect.
 - **What is not verified:** A hash of a different build (e.g. the
   maintainers' prebuilt binary) is not compared with a locally compiled
   source build. The previous behavior that could compare unrelated
-  artifacts has been corrected; `httpsGetText` does not follow redirects,
-  and redirect handling is not introduced here.
+  artifacts has been corrected. `httpsGetText` and release archive downloads
+  do not follow redirects while D-11 remains blocked. The candidate redirect
+  policy is documented separately and is not wired into runtime code.
 
 ### Cached binary integrity
 
@@ -272,8 +277,10 @@ The token is used strictly as a bearer credential for read-only requests to the
 GitHub REST API at `api.github.com` (for version resolution and checksum
 manifest lookup) to raise API rate limits. It is:
 
-- strictly restricted to `api.github.com` — the `Authorization` header is never
-  sent to arbitrary hosts or to release asset download URLs (such as `github.com`);
+- strictly restricted to a clean absolute HTTPS URL on exact `api.github.com`;
+  URLs with userinfo, encoded authorities, non-default ports, malformed or
+  non-HTTPS schemes are rejected before a request, and the `Authorization`
+  header is never sent to other hosts or release asset URLs (such as `github.com`);
 - never forwarded to child processes (the children receive only the
   allow-listed environment above, in which every `GITHUB_*` and `ACTIONS_*`
   name is denied) or echoed to logs, outputs, or summaries;

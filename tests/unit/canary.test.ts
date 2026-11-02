@@ -1645,8 +1645,8 @@ describe("prebuilt release install (issue #359)", () => {
     /** The name the published manifest actually uses for the linux-x64 binary
      * (what getReleaseAssetName maps to), NOT the archive name. */
     const LINUX_X64_BINARY_NAME = "stellar-canary-linux-x86_64";
-    const DOWNLOAD_URL = "https://example.test/prebuilt-download";
-    const OBJECTS_URL = "https://objects.githubusercontent.com/signed-asset";
+    const DOWNLOAD_URL = "https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.1.0/prebuilt-download";
+    const OBJECTS_URL = "https://release-assets.githubusercontent.com/signed-asset";
     const MANIFEST_URL = "https://example.test/SHA256SUMS";
 
     /** The bytes the flat extraction writes for the given archive. */
@@ -1863,7 +1863,7 @@ describe("prebuilt release install (issue #359)", () => {
       expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
     });
 
-    it("follows the CDN redirect when downloading the release asset", async () => {
+    it("refuses the CDN redirect and uses the source fallback while D-11 is blocked", async () => {
       const archiveBytes = Buffer.from("redirected-payload");
       servePrebuiltRelease({
         releaseBody: releaseBodyWith([
@@ -1879,7 +1879,12 @@ describe("prebuilt release install (issue #359)", () => {
       const installed = await withPlatform("linux", () => withArch("x64", () => ensureCanaryInstalled(RESOLVED)));
 
       expect(installed.binaryPath).toBe(prebuiltBinaryPath());
-      expect(cargoInstallSpawned()).toBe(false);
+      expect(installed.origin).toBe("source-build");
+      expect(cargoInstallSpawned()).toBe(true);
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(
+        expect.stringContaining("redirects are disabled while D-11 remains blocked; falling back to a source install."),
+      );
+      expect(httpsGetMock.mock.calls.map((call) => String(call[0]))).not.toContain(OBJECTS_URL);
     });
 
     it("copies a nested archive binary into the Action-owned install root", async () => {
@@ -1950,7 +1955,7 @@ describe("prebuilt release install (issue #359)", () => {
 
     it("falls back to cargo install when the prebuilt asset download returns HTTP 404", async () => {
       const assetName = LINUX_X64_ASSET;
-      const downloadUrl = "https://example.test/missing-prebuilt-asset";
+      const downloadUrl = "https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.1.0/missing-prebuilt-asset";
 
       httpsGetMock
         .mockImplementationOnce(
@@ -2319,6 +2324,36 @@ describe("bounded HTTP downloads (#500)", () => {
     return { response, destroyResponse, destroyRequest, delivered: () => delivered };
   }
 
+  it("sends a token only to a safe, exact GitHub API URL", async () => {
+    stream([Buffer.from("ok")]);
+    await expect(httpsGetText("https://api.github.com/repos/StellarCanary/Protocol-Canary", "secret")).resolves.toBe("ok");
+    expect(httpsGetMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: "Bearer secret" },
+    });
+  });
+
+  it.each([
+    ["HTTP API URL", "http://api.github.com/repos"],
+    ["userinfo API URL", "https://user:pass@api.github.com/repos"],
+    ["empty userinfo API URL", "https://@api.github.com/repos"],
+    ["encoded API authority", "https://%61pi.github.com/repos"],
+    ["custom-port API URL", "https://api.github.com:8443/repos"],
+    ["control character in API URL", "https://api.github.com/\r\n@attacker.example"],
+  ])("refuses a token request to an unsafe %s before opening a socket", async (_name, url) => {
+    await expect(httpsGetText(url, "secret")).rejects.toThrow();
+    expect(httpsGetMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "https://attacker.example/file",
+    "https://github.com/release/file",
+    "https://release-assets.githubusercontent.com/file",
+  ])("does not send Authorization to non-API text URL %s", async (url) => {
+    stream([Buffer.from("ok")]);
+    await expect(httpsGetText(url, "secret")).resolves.toBe("ok");
+    expect(httpsGetMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
+  });
+
   it.each([MAX_API_RESPONSE_BYTES, MAX_CHECKSUM_MANIFEST_BYTES])("accepts exactly %i bytes and preserves split UTF-8", async (limit) => {
     const bytes = Buffer.from("é" + "x".repeat(limit - 2));
     stream([bytes.subarray(0, 1), bytes.subarray(1)], { "content-length": String(limit) });
@@ -2345,7 +2380,7 @@ describe("bounded HTTP downloads (#500)", () => {
   it("writes exactly the asset byte limit", async () => {
     stream([Buffer.alloc(MAX_RELEASE_ASSET_BYTES)], { "content-length": String(MAX_RELEASE_ASSET_BYTES) });
     const dest = path.join(dir, "asset");
-    await httpsGetFile("https://example.test/asset", dest, 5);
+    await httpsGetFile("https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/asset", dest);
     expect(fs.statSync(dest).size).toBe(MAX_RELEASE_ASSET_BYTES);
   });
 
@@ -2355,7 +2390,7 @@ describe("bounded HTTP downloads (#500)", () => {
       kind === "header" ? { "content-length": String(MAX_RELEASE_ASSET_BYTES + 1) } : kind === "short" || kind === "lying header" ? { "content-length": "100" } : {},
       kind === "aborted" || kind === "close" ? kind : "end");
     const dest = path.join(dir, "asset");
-    await expect(httpsGetFile("https://example.test/asset", dest, 5)).rejects.toThrow();
+    await expect(httpsGetFile("https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/asset", dest)).rejects.toThrow();
     expect(fs.existsSync(dest)).toBe(false);
     expect(state.destroyRequest).toHaveBeenCalled();
     if (kind === "header") expect(state.delivered()).toBe(0);
@@ -2372,7 +2407,7 @@ describe("bounded HTTP downloads (#500)", () => {
       return file;
     });
     try {
-      await expect(httpsGetFile("https://example.test/asset", dest, 5)).rejects.toThrow("disk full");
+      await expect(httpsGetFile("https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/asset", dest)).rejects.toThrow("disk full");
       expect(fs.existsSync(dest)).toBe(false);
     } finally { spy.mockImplementation(actual); }
   });
@@ -2383,7 +2418,7 @@ describe("bounded HTTP downloads (#500)", () => {
       stream([], { "content-length": String(MAX_API_RESPONSE_BYTES + 1) });
     } else {
       stream([Buffer.from(JSON.stringify({ assets: [
-        { name: assetName, browser_download_url: "https://example.test/asset" },
+        { name: assetName, browser_download_url: "https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.1.0/asset" },
         { name: "SHA256SUMS", browser_download_url: "https://example.test/manifest" },
       ] }))]);
       stream([], { "content-length": String(MAX_RELEASE_ASSET_BYTES + 1) });
@@ -2394,16 +2429,75 @@ describe("bounded HTTP downloads (#500)", () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("applies the asset limit after a redirect", async () => {
-    httpsGetMock.mockImplementationOnce((_url, _options, callback) => {
-      const response = new FakeResponse(302);
-      response.headers.location = "https://cdn.test/asset";
+  it.each([
+    ["arbitrary HTTPS destination", "https://attacker.example/asset"],
+    ["HTTP downgrade", "http://github.com/asset"],
+    ["relative target", "/release/asset"],
+    ["protocol-relative target", "//release-assets.githubusercontent.com/asset"],
+    ["percent-encoded authority", "https://%67ithub.com/asset"],
+    ["userinfo target", "https://user:pass@github.com/asset"],
+    ["custom port target", "https://github.com:8443/asset"],
+    ["repeated redirect target", "https://github.com/repeated"],
+  ])("does not follow %s while D-11 remains blocked", async (_name, location) => {
+    const response = new FakeResponse(302);
+    response.headers.location = location;
+    const request = new FakeRequest();
+    const destroyRequest = vi.spyOn(request, "destroy");
+    httpsGetMock.mockImplementation((_url, _options, callback) => {
       queueMicrotask(() => callback(response));
-      return new FakeRequest();
+      return request;
     });
-    stream([], { "content-length": String(MAX_RELEASE_ASSET_BYTES + 1) });
     const dest = path.join(dir, "asset");
-    await expect(httpsGetFile("https://example.test/asset", dest, 5)).rejects.toThrow("cdn.test");
+
+    await expect(
+      httpsGetFile("https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/asset", dest),
+    ).rejects.toThrow("redirects are disabled while D-11 remains blocked");
+
+    expect(httpsGetMock).toHaveBeenCalledTimes(1);
+    expect(httpsGetMock.mock.calls[0]?.[0]).toBe(
+      "https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/asset",
+    );
+    expect(httpsGetMock.mock.calls[0]?.[1]).toEqual({
+      headers: { "User-Agent": "ProtocolCanary-Action" },
+    });
     expect(fs.existsSync(dest)).toBe(false);
+    expect(destroyRequest).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["HTTP", "http://github.com/asset"],
+    ["unknown host", "https://attacker.example/asset"],
+    ["userinfo", "https://user:pass@github.com/asset"],
+    ["custom port", "https://github.com:8443/asset"],
+    ["percent-encoded authority", "https://%67ithub.com/asset"],
+  ])("refuses an unsafe %s source URL before making a request", async (_name, url) => {
+    const dest = path.join(dir, "asset");
+    await expect(httpsGetFile(url, dest)).rejects.toThrow();
+    expect(httpsGetMock).not.toHaveBeenCalled();
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+
+  it("enforces a total download time budget even if a response keeps the socket active", async () => {
+    const response = new FakeResponse(200);
+    const request = new FakeRequest();
+    const destroyRequest = vi.spyOn(request, "destroy");
+    httpsGetMock.mockImplementationOnce((_url, _options, callback) => {
+      callback(response);
+      return request;
+    });
+    const dest = path.join(dir, "asset");
+    vi.useFakeTimers();
+    try {
+      const pending = httpsGetFile(
+        "https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/asset",
+        dest,
+      );
+      await vi.advanceTimersByTimeAsync(120_001);
+      await expect(pending).rejects.toThrow("total time budget");
+      expect(destroyRequest).toHaveBeenCalled();
+      expect(fs.existsSync(dest)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -2,6 +2,7 @@ import * as https from "node:https";
 import type { IncomingHttpHeaders } from "node:http";
 
 import { consumeResponse, MAX_API_RESPONSE_BYTES } from "./http-response";
+import { isExactGithubApiUrl, parseSafeHttpsUrl } from "./safe-url";
 
 export type GitHubRequestFailureKind = "network" | "timeout" | "server" | "rate-limit" | "http";
 
@@ -74,16 +75,9 @@ function requestOnce(
       reject(error);
     };
 
-    let hostname: string;
-    try {
-      const parsedUrl = new URL(url);
-      if (parsedUrl.protocol !== "https:") {
-        settleReject(new GitHubRequestError(`refusing non-HTTPS GitHub API URL ${url}`, "http"));
-        return;
-      }
-      hostname = parsedUrl.hostname;
-    } catch (error) {
-      settleReject(new GitHubRequestError(`invalid GitHub API URL ${url}: ${String(error)}`, "http"));
+    const parsed = parseSafeHttpsUrl(url);
+    if (parsed.url === undefined) {
+      settleReject(new GitHubRequestError(`refusing unsafe GitHub URL ${url}: ${parsed.reason}`, "http"));
       return;
     }
 
@@ -91,7 +85,7 @@ function requestOnce(
       "User-Agent": "ProtocolCanary-Action",
       Accept: "application/vnd.github+json",
     };
-    if (token !== undefined && hostname === "api.github.com") {
+    if (token !== undefined && isExactGithubApiUrl(url)) {
       headers.Authorization = `Bearer ${token}`;
     }
 

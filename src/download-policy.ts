@@ -1,18 +1,23 @@
 /**
- * Policy for following redirects when downloading release artifacts.
- * This module is pure (no network, no side effects) and must not be
- * imported by runtime download paths until approved; see tests.
+ * Candidate policy for following release download redirects. This remains
+ * blocked by D-11 and must not be wired into a runtime redirect path until
+ * maintainers approve the exact hosts and rules. The runtime currently
+ * rejects every redirect.
  */
 
-import { URL } from "node:url";
+import type { URL } from "node:url";
+import { isExactGithubApiUrl, parseSafeHttpsUrl } from "./safe-url";
 
 export const MAX_REDIRECT_HOPS = 3;
 
 export const ALLOWED_REDIRECT_HOSTS = Object.freeze([
-  "api.github.com",
   "github.com",
   "release-assets.githubusercontent.com",
 ] as const);
+
+const OBSERVED_REDIRECTS = Object.freeze([
+  Object.freeze({ from: "github.com", to: "release-assets.githubusercontent.com" }),
+]);
 
 export type AllowedRedirectHost = (typeof ALLOWED_REDIRECT_HOSTS)[number];
 
@@ -26,116 +31,83 @@ export interface HeadersForUrlOptions {
 }
 
 /**
- * Detects a percent-encoded host (authority) in the raw URL string. The
- * WHATWG URL parser decodes percent escapes in the hostname, which would let
- * `%67ithub.com` slip through an allow-list as `github.com`; this checks the
- * raw authority instead. Only the authority portion is inspected so percent
- * escapes in a path or query (which are legitimate) are not rejected.
+ * Returns a raw absolute or protocol-relative URL authority. Backslashes are
+ * included because WHATWG parsing treats them as slash separators for special
+ * schemes. Relative path/query references have no authority.
  */
-function hasPercentEncodedAuthority(rawUrl: string): boolean {
-  const schemeMatch = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.exec(rawUrl);
-  if (schemeMatch === null) {
-    return false;
-  }
-  const rest = rawUrl.slice(schemeMatch[0].length);
-  const authorityEnd = rest.search(/[/?#]/);
-  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
-  return authority.includes("%");
-}
-
-function isAllowedHost(hostname: string): hostname is AllowedRedirectHost {
-  if (hostname.includes("..")) {
-    return false;
-  }
-  if (hostname.includes("@")) {
-    return false;
-  }
-  // Reject trailing dot
-  if (hostname.endsWith(".")) {
-    return false;
-  }
-  return (ALLOWED_REDIRECT_HOSTS as readonly string[]).includes(hostname.toLowerCase());
+interface ParsedAllowedUrl {
+  url?: URL;
+  reason?: string;
 }
 
 /**
- * Evaluate a single redirect hop from `from` to `to`.
- * Returns { allowed: false } with a specific reason on rejection.
+ * Parses and validates one absolute URL used by the still-unapproved policy.
+ * This is also used for `from`, so both ends of a redirect must meet the same
+ * HTTPS, host, port, and userinfo rules.
+ */
+function parseAllowedUrl(
+  rawUrl: string,
+  allowedHosts: readonly string[] = ALLOWED_REDIRECT_HOSTS,
+): ParsedAllowedUrl {
+  const parsed = parseSafeHttpsUrl(rawUrl);
+  if (parsed.url === undefined) return { reason: parsed.reason };
+  const url = parsed.url;
+
+  const host = url.hostname.toLowerCase();
+  if (host.includes(":") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return { reason: "IP literals not allowed" };
+  }
+  if (!allowedHosts.includes(host)) {
+    return { reason: "host not in allow-list" };
+  }
+  return { url };
+}
+
+/** Validates a source URL without following or authorizing a request. */
+export function evaluateDownloadUrl(rawUrl: string): RedirectHopEvaluation {
+  const parsed = parseAllowedUrl(rawUrl);
+  return parsed.url === undefined
+    ? { allowed: false, reason: parsed.reason ?? "invalid source URL" }
+    : { allowed: true, reason: "allowed" };
+}
+
+/**
+ * Evaluate a single proposed redirect hop. Relative and protocol-relative
+ * Location values are deliberately rejected until maintainers approve a
+ * precise resolution rule under D-11.
  */
 export function evaluateRedirectHop(
   from: string,
   to: string,
   hopIndex: number,
 ): RedirectHopEvaluation {
-  if (hopIndex < 0) {
-    return { allowed: false, reason: "hop index must be >= 0" };
+  if (!Number.isInteger(hopIndex) || hopIndex < 0) {
+    return { allowed: false, reason: "hop index must be a non-negative integer" };
   }
   if (hopIndex >= MAX_REDIRECT_HOPS) {
     return { allowed: false, reason: `exceeded maximum redirects (${MAX_REDIRECT_HOPS})` };
   }
-
-  // Reject percent-encoded hostnames before parsing: the WHATWG URL parser
-  // decodes percent escapes in the host, so `%67ithub.com` would otherwise
-  // normalize to `github.com` and pass the allow-list. Inspect the raw
-  // authority for a `%` character (after resolving a relative target).
-  if (hasPercentEncodedAuthority(to) || hasPercentEncodedAuthority(from)) {
-    return { allowed: false, reason: "percent-encoded host not allowed" };
+  const source = parseAllowedUrl(from);
+  if (source.url === undefined) {
+    return { allowed: false, reason: `invalid source URL: ${source.reason ?? "invalid URL"}` };
   }
-
-  let fromUrl: URL;
-  let toUrl: URL;
-  try {
-    fromUrl = new URL(from);
-  } catch {
-    return { allowed: false, reason: "invalid source URL" };
+  const protocolRelativeAuthority = /^[\\/]{2}([^\\/?#]*)/.exec(to)?.[1];
+  if (protocolRelativeAuthority?.includes("%")) {
+    return { allowed: false, reason: "percent-encoded authority not allowed" };
   }
-  try {
-    toUrl = new URL(to, fromUrl);
-  } catch {
-    return { allowed: false, reason: "invalid redirect target URL" };
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(to)) {
+    return { allowed: false, reason: "relative and protocol-relative redirect targets are not allowed" };
   }
-
-  // Credentials in URL are rejected
-  if (fromUrl.username || fromUrl.password || toUrl.username || toUrl.password) {
-    return { allowed: false, reason: "userinfo not allowed in redirect URLs" };
+  const target = parseAllowedUrl(to);
+  if (target.url === undefined) {
+    return { allowed: false, reason: `invalid redirect target: ${target.reason ?? "invalid URL"}` };
   }
-
-  // Only HTTPS
-  if (fromUrl.protocol !== "https:") {
-    return { allowed: false, reason: "source must use https" };
+  const observedHop = OBSERVED_REDIRECTS.some(
+    (hop) => hop.from === source.url?.hostname.toLowerCase() && hop.to === target.url?.hostname.toLowerCase(),
+  );
+  if (!observedHop) {
+    return { allowed: false, reason: "redirect source and destination pair has not been observed" };
   }
-  if (toUrl.protocol !== "https:") {
-    return { allowed: false, reason: "redirect target must use https" };
-  }
-
-  // No non-default ports (443 for https is default but we reject if explicitly different)
-  if (toUrl.port && toUrl.port !== "443") {
-    return { allowed: false, reason: "non-default port not allowed" };
-  }
-  if (fromUrl.port && fromUrl.port !== "443") {
-    return { allowed: false, reason: "source non-default port not allowed" };
-  }
-
-  // Reject IP literals
-  const host = toUrl.hostname;
-  // IPv6
-  if (host.includes(":")) {
-    return { allowed: false, reason: "IP literals not allowed" };
-  }
-  // IPv4
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    return { allowed: false, reason: "IP literals not allowed" };
-  }
-
-  if (!isAllowedHost(host)) {
-    return { allowed: false, reason: "host not in allow-list" };
-  }
-
-  // Look-alike protection - must be exact match in allow-list (case insensitive handled)
-  const normalized = host.toLowerCase();
-  if (!(ALLOWED_REDIRECT_HOSTS as readonly string[]).includes(normalized)) {
-    return { allowed: false, reason: "host not in allow-list" };
-  }
-
   return { allowed: true, reason: "allowed" };
 }
 
@@ -150,8 +122,11 @@ export function getHeadersForUrl(url: string, options: HeadersForUrlOptions = {}
     Accept: "application/vnd.github+json",
   };
   try {
-    const u = new URL(url);
-    if ((options.token !== undefined && options.token !== "") && u.hostname.toLowerCase() === "api.github.com") {
+    if (
+      options.token !== undefined &&
+      options.token !== "" &&
+      isExactGithubApiUrl(url)
+    ) {
       headers.Authorization = `Bearer ${options.token}`;
     }
     // Never attach Authorization to github.com or CDN hosts

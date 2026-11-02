@@ -569,8 +569,15 @@ asset name in the published checksum manifest, such as
 path-prefixed filenames, and entries for another platform cannot substitute
 for that name. A missing manifest, missing exact entry, failed lookup, or
 digest mismatch fails release verification closed. `strict-integrity: true`
-also rejects source builds, including cached ones. `httpsGetText` does not
-follow redirects. See
+also rejects source builds, including cached ones. The API request helpers
+reject unsafe URL authorities before opening a request and attach a bearer
+token only to an exact HTTPS `api.github.com` endpoint. They do not follow
+redirects. The binary asset downloader also rejects every redirect while
+D-11 is blocked. Engine installation logs this and may fall back to a pinned
+source build, which is slower and requires Cargo; strict-integrity still
+rejects that fallback. Fixture-pack download fails on a redirect. See
+[`docs/download-policy.md`](docs/download-policy.md) for the observed host
+evidence and candidate policy, and
 [SECURITY.md](SECURITY.md) for details.
 
 This Action is also a JavaScript action, declared as `runs: using: node24`

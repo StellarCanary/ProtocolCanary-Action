@@ -48,14 +48,15 @@ for the least-privilege consumption pattern).
   are not reduced to their basename. A missing exact entry, unavailable
   manifest, or digest mismatch aborts (`InstallationFailed`) before the
   downloaded binary runs, in both default and strict modes.
-- The published-checksum lookup never follows a redirect: a 3xx (to any
-  domain, allowlisted or not — including `evil.com`-style spoof targets)
-  is a failed lookup, and no second request is issued to the `Location`
-  value. Plain `http://` manifest targets can never complete: all lookups
-  go through Node's TLS client.
-- No Authorization header can leak to a third party, because redirects —
-  the only path by which the request identity could change target — are
-  never followed.
+- The release-asset downloader makes one HTTPS request to a `github.com`
+  release URL. Any 3xx is rejected before `Location` is parsed or requested.
+  It removes partial files, and the Engine installer logs its permitted
+  source-build fallback. Fixture-pack downloads fail closed.
+- Asset requests carry no Authorization header. Runtime request helpers add a
+  bearer token only to a clean absolute HTTPS URL for exact `api.github.com`.
+  They reject userinfo, encoded authorities, non-default ports, HTTP, and
+  malformed URLs before opening a request. Release assets and every other
+  host receive no token.
 
 **What is deliberately *not* guaranteed (decision D-07, deferred):**
 checksums and commit pins are data-integrity mechanisms — they detect
@@ -67,16 +68,16 @@ minisign identities, no Sigstore bundles). A checksum manifest published
 Any digest shown in the job summary's "Provenance & Trust" section carries
 this caveat inline; it must never be quoted as authorship proof.
 
-**Decision D-11 (unresolved, blocked):** the download-redirect policy —
-which redirect hosts would be allowlisted, up to how many hops, and with
-what header stripping — remains **blocked until verified against real
-release hosts** (GitHub's asset CDN rotates `objects.githubusercontent.com`
-endpoints, and a wrong allowlist is a security feature that silently
-becomes a bypass). Until D-11 is resolved, the implemented policy is
-maximally strict: **redirects are not followed at all** (0 hops), which is
-the boundary `tests/unit/integrity.test.ts` pins. No code in this
-repository currently claims an allowlist; if you read one anywhere, it is
-stale.
+**Decision D-11 (unresolved, blocked):** runtime redirect following remains
+disabled. The pure candidate policy in `src/download-policy.ts` allows only
+the observed `github.com` → `release-assets.githubusercontent.com` edge,
+validates both URLs, and caps a proposed chain at three hops. It is not
+imported by runtime code and does not approve redirects. The Action observed
+the source's 302 and destination hostname on 2026-11-02 without following
+the redirect; the Engine contract records an earlier 200 response from the
+destination. Maintainers must review this evidence and explicitly approve
+the exact rule before runtime integration. Any later CDN hostname needs new
+evidence and approval.
 
 ## The strict-integrity fail-closed policy (issue #372)
 
@@ -133,7 +134,7 @@ binary it runs and the channels it verifies it over.
 |---|---|---|
 | Tampered release artifact | Substituted binary after publication | Checksum mismatch aborts before execution and before cache save (`src/canary.ts`) |
 | Cache poisoning | Malicious entry under a predictable Actions cache key | Cache key embeds platform, arch, and the immutable commit (`stellar-canary-<platform>-<arch>-<sha>`); restored binaries are re-verified; a verification failure never saves |
-| Redirect to attacker host | 3xx response during release/manifest lookup | Never followed (D-11 strictest reading); release checksum verification fails closed, and source builds do not look up release checksums |
+| Redirect to attacker host | 3xx response during release asset download | Never followed while D-11 is blocked; Engine installation warns and may use the pinned source build under default integrity, while fixture-pack download fails closed |
 | Downgrade to plaintext | `http://` asset URL | Unconditionally rejected — TLS client only, no second request |
 | Shell injection via inputs or engine output | Argument interpolation, fixture/PR text | Array-spawn only, no shell; inputs validated at boundary 1 |
 | Markdown / workflow-command injection via engine stderr | Diagnostic text in summary or logs | Fenced with CommonMark-longer fences (`src/summary.ts`) and neutralised (`src/redact.ts`) |
@@ -144,8 +145,9 @@ binary it runs and the channels it verifies it over.
 
 - D-07: release signing deferred upstream; until then nothing in this
   repository may present a checksum as authenticity.
-- D-11: redirect allowlist / hop budget / header-stripping policy blocked
-  pending verification against real release hosts.
+- D-11: redirect allowlist / hop budget / header policy is blocked. The
+  candidate module is tested but not wired into runtime; maintainers still
+  need to approve the observed host pair and proposed behavior.
 - #338: fixture-pack download with redirect and size limits — the pack
   digest row in the summary stays "unverified" until this lands.
 - #360: execution receipt serialization (open PR) will feed additional
