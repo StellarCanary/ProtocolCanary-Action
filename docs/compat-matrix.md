@@ -26,6 +26,8 @@ Fixtures `main` contains `protocol-28/soroban/p28-soroban-sim-error-arg-type.tom
 
 This is a real historical Engine limitation and a fixture-contract version mismatch when those older releases are paired with Fixtures `main`. It is not a runner outage, and the fixture is valid for the newer Engine that implements its declared argument kind. The immutable `protocol-28` tag predates this fixture. The canonical fixture has not been changed. The current offline-XDR matrix disables Soroban, so it does not test this Soroban limitation. The earlier run's parser diagnostics are preserved as evidence; no expectation was added to turn the result green.
 
+Fixtures `main` also contains the XDR fixture `p28-xdr-ledger-entry-account-truncated.toml`, added in Fixtures commit [`0831377d49fa61ef58d354ababeae6fab26660f6`](https://github.com/StellarCanary/ProtocolCanary-Fixtures/commit/0831377d49fa61ef58d354ababeae6fab26660f6) on 2026-10-22. Engine main added `LedgerEntry` XDR support in commit [`695080be77cc06077393a305a6f5a5b346847525`](https://github.com/StellarCanary/Protocol-Canary/commit/695080be77cc06077393a305a6f5a5b346847525) on 2026-10-15, after the `v0.1.1` and `v0.2.0` release commits. In run [41452363927](https://github.com/StellarCanary/ProtocolCanary-Action/actions/runs/41452363927), both releases built successfully, then rejected this fixture before running checks with `unsupported XDR type name "LedgerEntry"`. This is a verified historical Engine limitation for the moving `main` pack, not infrastructure failure. The fixture is unchanged. Two exact `execution-failed` expectations record these observed Engine/Fixtures ref pairs and their diagnostic signature; if either pair stops producing that diagnostic, it will classify as an unexpected pass or failure and require review.
+
 ## Classifications
 
 Each cell receives one classification:
@@ -39,9 +41,9 @@ Each cell receives one classification:
 | `unexpected-failure` | A valid report failed without a matching expectation, or the raw CLI evidence identifies a deterministic fixture parse error without a matching expectation. | Fails the workflow. |
 | `unexpected-pass` | A valid report passed for a pair that has an expectation. | Fails the workflow. |
 
-A fixture parse error such as `unsupported arg kind "i128"` is not classified as infrastructure. The classifier recognizes it only when the raw stderr, nonzero CLI exit code, and missing usable report agree. The artifact retains the report file, stderr, exit code, build stdout and build stderr. The collector rechecks that the reported failure kind matches those raw files. Other missing or malformed report evidence remains infrastructure because compatibility cannot be determined from it.
+A deterministic fixture parse error such as `unsupported arg kind "i128"` or `unsupported XDR type name "LedgerEntry"` is not classified as infrastructure. The classifier recognizes it only when the raw stderr, nonzero CLI exit code, and missing usable report agree. The artifact retains the report file, stderr, exit code, build stdout and build stderr. The collector rechecks that the reported failure kind matches those raw files. Other missing or malformed report evidence remains infrastructure because compatibility cannot be determined from it.
 
-The expectation registry is `docs/compat-expectations.json`. Entries require observed refs, status, diagnostic signature, run URL, date and reason. It currently contains no entries. Do not add an expectation merely to make a run green.
+The expectation registry is `docs/compat-expectations.json`. Entries require observed refs, status, diagnostic signature, run URL, date and reason. Its two current entries cover only the observed `LedgerEntry` parser rejection for `v0.1.1`/`main` and `v0.2.0`/`main`, backed by run [41452363927](https://github.com/StellarCanary/ProtocolCanary-Action/actions/runs/41452363927). Do not add an expectation merely to make a run green.
 
 ## Failure and collection behavior
 
@@ -63,4 +65,4 @@ The collector uploads `compat-matrix.json`, a machine-readable object containing
 
 ## Regression tests
 
-`tests/unit/compat-matrix-inputs.test.ts` covers ref splitting and validation. `tests/unit/compat-matrix-results.test.ts` covers fact creation, raw artifact validation, report-less fixture parse errors, transport failures, and collection. `tests/unit/classify-compat.test.ts` covers classification boundaries and workflow failure behavior.
+`tests/unit/compat-matrix-inputs.test.ts` covers ref splitting and validation. `tests/unit/compat-matrix-results.test.ts` covers fact creation, raw artifact validation, report-less Soroban and XDR fixture parse errors, transport failures, and collection. `tests/unit/classify-compat.test.ts` covers classification boundaries and workflow failure behavior.

@@ -225,6 +225,29 @@ describe("compatibility matrix cell evidence", () => {
     }
   });
 
+  it("matches the recorded LedgerEntry incompatibilities for the exact release and pack refs", () => {
+    const matrixJson = buildMatrix(["v0.1.1", "v0.2.0"], ["main"]);
+    const artifactRoot = temporaryDirectory();
+    const expectations = JSON.parse(readFileSync("docs/compat-expectations.json", "utf8"));
+
+    for (const cell of matrixJson.include) {
+      const isV011 = cell.engine_ref === "v0.1.1";
+      createArtifact(artifactRoot, cell, {
+        exitCode: isV011 ? "3" : "4",
+        stderr: isV011
+          ? 'error: xdr error: invalid xdr fixture body in fixtures/protocol-28/xdr/ledger-entry/p28-xdr-ledger-entry-account-truncated.toml: unsupported XDR type name "LedgerEntry": supported types are: StellarValue, ContractExecutable'
+          : 'error: invalid fixture: invalid xdr fixture body in fixtures/protocol-28/xdr/ledger-entry/p28-xdr-ledger-entry-account-truncated.toml: unsupported XDR type name "LedgerEntry": supported types are: StellarValue, ContractExecutable, ScVal',
+      });
+    }
+
+    const result = collect(artifactRoot, { matrixJson, expectations });
+    expect(result.cells.map((cell) => cell.classification)).toEqual([
+      "expected-incompatible",
+      "expected-incompatible",
+    ]);
+    expect(result.hasFailures).toBe(false);
+  });
+
   it("keeps report-less RPC transport failures classified as infrastructure", () => {
     const artifactRoot = temporaryDirectory();
     createArtifact(artifactRoot, onlyCell(), {
