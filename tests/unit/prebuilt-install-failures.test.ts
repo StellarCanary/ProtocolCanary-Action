@@ -466,8 +466,10 @@ describe("prebuilt release install failure paths (#495)", () => {
         },
       });
 
-      await expect(ensureCanaryInstalled(RESOLVED, undefined, undefined, true)).rejects.toThrow(
-        InstallationFailedError,
+      await withPlatform("linux", () =>
+        withArch("x64", () =>
+          expect(ensureCanaryInstalled(RESOLVED, undefined, undefined, true)).rejects.toThrow(InstallationFailedError),
+        ),
       );
 
       expect(coreMocks.warningMock).toHaveBeenCalledWith(
