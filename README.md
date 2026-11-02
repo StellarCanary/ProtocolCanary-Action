@@ -174,7 +174,7 @@ jobs:
 | `fixtures-pack-protocol` | Protocol version the pack is pinned to, as a positive integer (`0` is rejected, as with `protocol`). **Accepted and validated, but not forwarded to Canary** — see above. The protocol a run checks is `protocol`. | (none) |
 | `baseline-report` | Path to a previous Protocol Canary JSON report. The file must exist and be a schemaVersion 1 report for the same target protocol as this run. **Validated only**: the engine's `diff` command is not released yet (#335), so no regression verdict is produced. A missing, malformed, or protocol-incompatible baseline fails the run with an actionable annotation. | (none) |
 | `generate-receipt` | Generate a machine-readable Execution Receipt (provenance: engine version, engine build commit, fixture-pack digest, target protocol, observed protocol, timestamp) and upload it as the `stellar-canary-receipt-<run-id>` artifact; `receipt-path` carries the file location. | `false` |
-| `strict-integrity` | Fail-closed integrity policy. When `true`, the run aborts whenever binary integrity cannot be proven (no published checksum manifest, no entry for this platform, or a checksum lookup that could not be completed); when `false` it degrades to commit/tag pinning with a debug note. A checksum mismatch aborts the run in either mode. A checksum verifies data integrity, not the release author's identity. See [`docs/security-model.md`](docs/security-model.md). | `false` |
+| `strict-integrity` | When `true`, rejects source-built binaries, including cached source builds, because published release checksums do not apply to them. The default `false` permits source builds using the commit/tag pin and install-time digest, with an info log explaining that guarantee. Downloaded release binaries require a checksum matching the exact platform asset name in either mode; missing or unverifiable entries and mismatched digests fail closed. A checksum verifies data integrity, not the release author's identity. See [`docs/integrity-model.md`](docs/integrity-model.md). | `false` |
 | `pr-comment` | Opt in to a bounded pull request summary comment. Requires `pull-requests: write` on same-repository `pull_request` workflows; fork PRs and other events are skipped, and permission failures are warnings, not failed checks. | `false` |
 
 There is deliberately no `format` input: the Action always requests
@@ -543,10 +543,12 @@ retention applies.
 
 ## Installation & integrity
 
-`Protocol-Canary` does not yet publish prebuilt release binaries or
-checksums (see its own `docs/json-report-contract.md` and this Action's
-[SECURITY.md](SECURITY.md)). This Action installs it with `cargo install
---git`, pinned to the immutable commit the requested version's tag
+Engine [v0.2.0](https://github.com/StellarCanary/Protocol-Canary/releases/tag/v0.2.0)
+publishes the binary `stellar-canary-linux-x86_64` and `SHA256SUMS`.
+The Action's prebuilt installer expects an archive for the requested
+platform; a raw binary release alone does not make that archive path
+available. When no usable prebuilt archive exists, the Action installs
+with `cargo install --git`, pinned to the immutable commit the requested version's tag
 resolved to at run time (falling back to the tag itself, with a warning, if
 that resolution fails) — see `src/version.ts` and `src/canary.ts`. This
 requires a Rust/Cargo toolchain on the runner; GitHub-hosted Ubuntu
@@ -557,13 +559,18 @@ workflow that does this with `dtolnay/rust-toolchain` ahead of invoking
 this Action. A successful build is cached (best-effort; never required for
 correctness) using `actions/cache`.
 
-**Integrity model:** for source builds (the only installation method used
-today), the integrity anchor is the immutable commit/tag pin; release
-checksums are not applied to binaries compiled from source. If prebuilt
-release assets are used in the future, this Action will verify them
-against the exact per-platform entry in the published checksum manifest
-and fail closed on mismatch or missing entries. `httpsGetText` does not
-follow redirects and no redirect-following code is added. See
+**Integrity model:** source builds use the resolved commit/tag pin and an
+install-time digest checked on cache restore. Their recorded origin keeps
+them separate from published release checksum verification; no checksum
+manifest is fetched for a source build. The Action logs this distinction
+at info level. Downloaded release binaries require the exact requested
+asset name in the published checksum manifest, such as
+`stellar-canary-linux-x86_64` on Linux x64. Generic `stellar-canary` entries,
+path-prefixed filenames, and entries for another platform cannot substitute
+for that name. A missing manifest, missing exact entry, failed lookup, or
+digest mismatch fails release verification closed. `strict-integrity: true`
+also rejects source builds, including cached ones. `httpsGetText` does not
+follow redirects. See
 [SECURITY.md](SECURITY.md) for details.
 
 This Action is also a JavaScript action, declared as `runs: using: node24`

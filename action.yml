@@ -332,14 +332,13 @@ inputs:
   strict-integrity:
     description: >-
       Optional fail-closed integrity policy (issue #372). Defaults to `false`,
-      preserving today's behaviour: when the published SHA-256 checksum for
-      the resolved release is missing or does not cover this platform, the
-      Action degrades to commit/tag pinning with a debug note. Set to `true`
-      to abort instead whenever binary integrity cannot be proven - no
-      published checksum manifest, no manifest entry for this platform, or a
-      checksum lookup that could not be completed (for example a redirected
-      or unencrypted manifest request). A checksum mismatch aborts the run in
-      either mode. Be honest about what "proven" means (decision D-07): a
+      permitting source builds with commit/tag pinning and an install-time
+      digest checked on cache restore. Source builds log at info level that
+      published release checksums do not apply. Set to `true` to reject source
+      builds, including cached ones. Downloaded release binaries require an
+      exact platform asset checksum in both modes. A missing manifest, missing
+      exact entry, failed lookup, or checksum mismatch aborts release binary
+      verification. Be honest about what "proven" means (decision D-07): a
       checksum verifies data integrity, not the release author's identity or
       endorsement, and release signing is deferred; the download-redirect
       allowlist policy (D-11) remains blocked until verified against real
