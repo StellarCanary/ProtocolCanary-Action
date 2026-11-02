@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "engineRef": "v0.1.1",
+    "packRef": "main",
+    "expectedStatus": "execution-failed",
+    "failureSignature": "unsupported XDR type name \"LedgerEntry\"",
+    "runUrl": "https://github.com/StellarCanary/ProtocolCanary-Action/actions/runs/41452363927",
+    "dateAdded": "2026-11-02",
+    "reason": "Engine v0.1.1 predates LedgerEntry XDR support, while Fixtures main includes a LedgerEntry fixture."
+  },
+  {
+    "engineRef": "v0.2.0",
+    "packRef": "main",
+    "expectedStatus": "execution-failed",
+    "failureSignature": "unsupported XDR type name \"LedgerEntry\"",
+    "runUrl": "https://github.com/StellarCanary/ProtocolCanary-Action/actions/runs/41452363927",
+    "dateAdded": "2026-11-02",
+    "reason": "Engine v0.2.0 predates LedgerEntry XDR support, while Fixtures main includes a LedgerEntry fixture."
+  }
+]

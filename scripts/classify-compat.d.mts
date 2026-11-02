@@ -11,20 +11,32 @@ export type CellClassification =
   | "unexpected-pass";
 
 export interface CellFacts {
+  schemaVersion: 1;
+  cellId: string;
   engineRef: string;
   packRef: string;
+  executionMode: "offline-xdr";
+  engineCommit: string | null;
+  fixturesCommit: string | null;
   actionCommit: string;
   runUrl: string;
-  buildOutcome: "success" | "failure" | "timeout" | "cancelled";
-  actionStatus?: string;
-  passed?: number;
-  failures?: number;
-  warnings?: number;
-  errors?: number;
-  replayedCount?: number;
-  total?: number;
-  firstDiagnostic?: string;
+  engineCheckoutOutcome: "success" | "failure" | "cancelled" | "skipped";
+  fixturesCheckoutOutcome: "success" | "failure" | "cancelled" | "skipped";
+  buildOutcome: "success" | "failure" | "timeout" | "cancelled" | "skipped";
+  checkOutcome: "completed" | "failure" | "timeout" | "cancelled" | "skipped" | "unknown";
+  checkExitCode: number | null;
+  actionStatus: "pass" | "warning" | "fail" | "error" | "execution-failed" | null;
+  cliFailureKind: "fixture-parse" | null;
+  passed: number | null;
+  failures: number | null;
+  warnings: number | null;
+  errors: number | null;
+  replayedCount: number | null;
+  total: number | null;
+  firstDiagnostic: string;
   ranNoChecks: boolean;
+  evidenceError: string | null;
+  evidenceFiles: string[];
 }
 
 export interface ExpectationEntry {
