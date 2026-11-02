@@ -8,20 +8,29 @@
 
 /**
  * @typedef {Object} CellFacts
+ * @property {number} schemaVersion - Version of the facts artifact contract.
+ * @property {string} cellId - Unique identity from the prepared matrix.
  * @property {string} engineRef - The engine reference that was tested (e.g., "v0.1.1", "main").
  * @property {string} packRef - The fixture pack reference that was tested (e.g., "protocol-28", "main").
+ * @property {string|null} engineCommit - Resolved Engine commit SHA from checkout.
+ * @property {string|null} fixturesCommit - Resolved Fixtures commit SHA from checkout.
  * @property {string} actionCommit - The Action commit SHA that ran the test.
  * @property {string} runUrl - The GitHub Actions run URL for this cell.
- * @property {"success"|"failure"|"timeout"|"cancelled"} buildOutcome - Build/checkout outcome.
- * @property {string} [actionStatus] - The Action's `status` output.
- * @property {number} [passed] - The Action's `passed` output.
- * @property {number} [failures] - The Action's `failures` output.
- * @property {number} [warnings] - The Action's `warnings` output.
- * @property {number} [errors] - The Action's `errors` output.
- * @property {number} [replayedCount] - The Action's `replayed-count` output.
- * @property {number} [total] - Total checks from `counts.total`.
+ * @property {"success"|"failure"|"cancelled"|"skipped"} engineCheckoutOutcome - Engine checkout outcome.
+ * @property {"success"|"failure"|"cancelled"|"skipped"} fixturesCheckoutOutcome - Fixtures checkout outcome.
+ * @property {"success"|"failure"|"timeout"|"cancelled"|"skipped"} buildOutcome - Build outcome.
+ * @property {"completed"|"failure"|"timeout"|"cancelled"|"skipped"|"unknown"} checkOutcome - CLI execution outcome.
+ * @property {string|null} actionStatus - Status from the validated CLI JSON report.
+ * @property {number|null} passed - The CLI report's passed count.
+ * @property {number|null} failures - The CLI report's failed count.
+ * @property {number|null} warnings - The CLI report's warning count.
+ * @property {number|null} errors - The CLI report's error count.
+ * @property {number|null} replayedCount - Results replayed from cache.
+ * @property {number|null} total - Total checks from `counts.total`.
  * @property {string} [firstDiagnostic] - First line of diagnostic/stderr.
  * @property {boolean} ranNoChecks - Whether the run executed zero checks.
+ * @property {string|null} evidenceError - Error that made the CLI report unusable, if any.
+ * @property {string[]} evidenceFiles - Names of the raw execution files in the artifact.
  */
 
 /**
@@ -59,21 +68,64 @@
  * @returns {ClassifiedCell}
  */
 export function classifyCell(facts, expectations) {
-  // 1. Infrastructure failures: build/checkout failure, timeout, cancellation
-  if (facts.buildOutcome !== "success") {
-    return {
-      engineRef: facts.engineRef,
-      packRef: facts.packRef,
-      actionCommit: facts.actionCommit,
-      runUrl: facts.runUrl,
-      classification: "infrastructure",
-      reason: `Build/checkout ${facts.buildOutcome}: unable to evaluate compatibility`,
-      evidence: facts.runUrl,
-    };
+  const infrastructure = (reason) => ({
+    engineRef: facts.engineRef,
+    packRef: facts.packRef,
+    actionCommit: facts.actionCommit,
+    runUrl: facts.runUrl,
+    classification: "infrastructure",
+    reason,
+    evidence: facts.runUrl,
+  });
+
+  if (
+    facts.schemaVersion !== 1 ||
+    !facts.cellId ||
+    !facts.engineRef ||
+    !facts.packRef ||
+    !facts.actionCommit ||
+    !facts.runUrl ||
+    typeof facts.ranNoChecks !== "boolean" ||
+    !Array.isArray(facts.evidenceFiles) ||
+    (facts.evidenceError !== null && typeof facts.evidenceError !== "string")
+  ) {
+    return infrastructure("Cell facts are missing required fields or have an unsupported schema.");
   }
 
-  // 2. No checks executed
-  if (facts.ranNoChecks || (facts.total !== undefined && facts.total === 0)) {
+  if (facts.engineCheckoutOutcome !== "success") {
+    return infrastructure(`Engine checkout ${facts.engineCheckoutOutcome}: unable to evaluate compatibility`);
+  }
+  if (facts.fixturesCheckoutOutcome !== "success") {
+    return infrastructure(`Fixtures checkout ${facts.fixturesCheckoutOutcome}: unable to evaluate compatibility`);
+  }
+  if (facts.buildOutcome !== "success") {
+    return {
+      ...infrastructure(`Build ${facts.buildOutcome}: unable to evaluate compatibility`),
+    };
+  }
+  if (facts.checkOutcome === "timeout" || facts.checkOutcome === "cancelled") {
+    return infrastructure(`Compatibility check ${facts.checkOutcome}: unable to evaluate compatibility`);
+  }
+  if (facts.evidenceError) {
+    return infrastructure(
+      `Execution evidence is incomplete: ${facts.evidenceError}${facts.firstDiagnostic ? `: ${facts.firstDiagnostic}` : ""}`,
+    );
+  }
+  if (facts.checkOutcome !== "completed") {
+    return infrastructure(`Compatibility check ${facts.checkOutcome}: unable to evaluate compatibility`);
+  }
+
+  for (const field of ["passed", "failures", "warnings", "errors", "total", "replayedCount"]) {
+    if (!Number.isSafeInteger(facts[field]) || facts[field] < 0) {
+      return infrastructure(`Cell facts have a missing or invalid ${field} count.`);
+    }
+  }
+  if (!new Set(["pass", "warning", "fail", "error", "execution-failed"]).has(facts.actionStatus)) {
+    return infrastructure("Cell facts have a missing or invalid CLI status.");
+  }
+
+  // A valid empty report is useful evidence of a skipped cell, never support.
+  if (facts.ranNoChecks || facts.total === 0) {
     return {
       engineRef: facts.engineRef,
       packRef: facts.packRef,
@@ -152,13 +204,28 @@ export function classifyCell(facts, expectations) {
 
 /**
  * Determines if a cell should fail the overall matrix job.
- * Only unexpected-failure and unexpected-pass cause job failure.
+ * Infrastructure failures and unexpected compatibility results fail the job.
  *
  * @param {CellClassification} classification
  * @returns {boolean}
  */
 export function shouldFailJob(classification) {
-  return classification === "unexpected-failure" || classification === "unexpected-pass";
+  return (
+    classification === "infrastructure" ||
+    classification === "unexpected-failure" ||
+    classification === "unexpected-pass"
+  );
+}
+
+function escapeTableCell(value, maxLength = 512) {
+  return String(value)
+    .slice(0, maxLength)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("|", "\\|")
+    .replace(/\r?\n/g, "<br>")
+    .replace(/\r/g, " ");
 }
 
 /**
@@ -177,7 +244,7 @@ export function formatCellRow(cell) {
     "unexpected-pass": "🔄",
   };
   const icon = statusIcon[cell.classification] ?? "❓";
-  return `| ${cell.engineRef} | ${cell.packRef} | ${icon} ${cell.classification} | ${cell.reason} | ${cell.evidence} |`;
+  return `| ${escapeTableCell(cell.engineRef, 255)} | ${escapeTableCell(cell.packRef, 255)} | ${icon} ${escapeTableCell(cell.classification, 64)} | ${escapeTableCell(cell.reason)} | ${escapeTableCell(cell.evidence)} |`;
 }
 
 /**
