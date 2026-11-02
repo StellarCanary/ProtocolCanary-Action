@@ -123,7 +123,7 @@ jobs:
 
           cargo_root="${CARGO_HOME:-${HOME}/.cargo}"
           set +e
-          cargo install --locked --path "$cli_path" --root "$cargo_root" \
+          cargo install --locked --force --path "$cli_path" --root "$cargo_root" \
             >"${evidence_dir}/build.stdout" 2>"${evidence_dir}/build.stderr"
           install_status=$?
           set -e
