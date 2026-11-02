@@ -1,40 +1,83 @@
-# Release download redirect policy (D-11)
+# Release download redirects (D-11)
 
-This document defines the policy for following HTTP redirects when downloading release artifacts. It is a security decision that must be approved before any code follows redirects.
+D-11 remains blocked. This page separates the Action's behavior today from a
+candidate policy for maintainer review. No redirect is followed by the runtime
+download code, and nothing here grants approval to enable redirect following.
 
-**Decision to approve (exact wording for D-11):**  
-"Allow redirects only for HTTPS hops between api.github.com, github.com, and release-assets.githubusercontent.com with a maximum of 3 hops, reject non-HTTPS schemes/ports/userinfo/IP literals/look-alikes/percent-encoded/relative-protocol-relative tricks, never forward Authorization to non-API hosts, and validate with an explicit allow-list using the WHATWG URL parser."
+## Runtime behavior today
 
-## Allowed hosts and observations
+`httpsGetFile` makes one request to an absolute HTTPS release URL hosted on
+`github.com`, with no userinfo, percent-encoded authority, or custom port. It
+sends a User-Agent and no Authorization header. Any 3xx response is rejected
+before its `Location` value is parsed or requested. Downloads are bounded by
+one 120-second wall-clock deadline and the existing asset-size limit.
 
-| Host | Purpose | Observed (date) | Reproduction command |
-|---|---|---|---|
-| `api.github.com` | GitHub REST API (release metadata, checksum manifests) | 2026-10-18 | `curl -sI https://api.github.com/repos/StellarCanary/Protocol-Canary/releases/tags/v0.2.0 \| head -5` |
-| `github.com` | Release asset page/download links | 2026-10-18 | `curl -sI https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/SHA256SUMS \| head -10` |
-| `release-assets.githubusercontent.com` | CDN redirect target for release assets | 2026-10-18 | Observed via redirect from `github.com/.../SHA256SUMS` (returns 302 to this host, which returns 200) |
+The Engine installer logs a warning and falls back to a pinned source build
+after a prebuilt redirect is refused. That fallback requires a Rust toolchain
+and can make installation much slower. `strict-integrity: true` retains its
+existing rule: a source-built binary is rejected before execution, so a
+redirected prebuilt release can make that run fail. Fixture-pack downloads do
+not fall back to an Engine source build; a redirect fails the pack download.
+The runtime never executes an unverified release binary.
 
-**Observed behavior (2026-10-18):**
-- `https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/SHA256SUMS` → `302 Found` with `Location` to `https://release-assets.githubusercontent.com/...`
-- `https://release-assets.githubusercontent.com/...` → `200 OK`
+## Observed release hosts
 
-## Rules
+The host set below is limited to the one redirect transition verified for the
+published Engine v0.2.0 binary. `api.github.com` is used for release metadata
+and checksum requests; it has not been observed as a redirect source or target
+and is not in the candidate redirect host set.
 
-1. **HTTPS only.** Every hop must use `https:`. Redirects from `https` to `http`, `file:`, `data:`, `javascript:`, or any other scheme are rejected.
-2. **Bounded redirects.** Maximum of `3` hops. A total time budget must be enforced by callers; the policy exposes the hop limit.
-3. **Destination validation.** Each target is parsed with the WHATWG URL parser. Relative Location values are resolved against the current URL before checking. Protocol-relative (`//...`) and absolute URLs are validated.
-4. **Explicit allow-list.** Only exact hostnames in `api.github.com`, `github.com`, `release-assets.githubusercontent.com` are allowed. Subdomain wildcards are not used. Look-alike hosts (`github.com.evil.example`, `evilgithub.com`), IP literals (including IPv6), userinfo, non-default ports, trailing-dot hosts, and percent-encoded hosts are rejected.
-5. **Credential protection.** An `Authorization` header is attached **only** to requests for exactly `api.github.com`. It is **never** forwarded to `github.com`, never forwarded to `release-assets.githubusercontent.com`, and never forwarded after any host change. Signed download URLs on the CDN must be requested without credentials.
-6. **Fail closed.** Any violation results in rejection with a specific reason. Unknown schemes or malformed URLs must not throw unexpectedly.
+| Host | Observed role | Evidence |
+|---|---|---|
+| `github.com` | Source of the release asset redirect | On 2026-11-02 at 14:42 UTC, a HEAD request to `https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.2.0/stellar-canary-linux-x86_64` returned `302`; its HTTPS `Location` hostname was `release-assets.githubusercontent.com`. The request did not follow the redirect. |
+| `release-assets.githubusercontent.com` | Destination of that redirect | The Engine contract README records the same v0.2.0 asset hop returning `200 OK` on 2026-10-09. This Action re-observed the destination hostname in the 2026-11-02 `302`; it did not follow the `Location` during this check. |
+| `api.github.com` | GitHub REST API for metadata | It appears in API request URLs, not in an observed redirect hop. Runtime API requests attach a bearer token only to a clean absolute HTTPS URL on this exact host, with no userinfo, encoded authority, or non-default port. |
 
-## Threats addressed
+Do not add CDN aliases, subdomains, or other hosts without new evidence and
+maintainer approval. The only candidate redirect edge is the observed
+`github.com` → `release-assets.githubusercontent.com` transition.
 
-- **Token exfiltration:** Prevents bearer tokens from being sent to CDN or arbitrary hosts on redirect.
-- **Open redirect / host spoofing:** Blocks look-alikes, IP literals, and unexpected hosts.
-- **Downgrade attacks:** Enforces HTTPS on every hop.
-- **Abuse via unusual URL forms:** Rejects userinfo, non-default ports, trailing dots, percent-encoded hostnames.
+## Candidate policy for D-11 approval
 
-## Out of scope
+The pure module `src/download-policy.ts` validates candidate redirect URLs but
+is not imported by the runtime downloader. Its allowlist contains only the two
+observed redirect hosts, and it currently allows only the observed directed
+hop. Before any runtime integration, maintainers must review and approve the
+exact rule, including:
 
-- **Signatures/checksums beyond existing policy:** Artifact signature verification is covered by separate decisions (see D-07). This policy only governs redirect following and credential/host safety.
-- **Implementing download logic:** This issue only adds the policy module, tests, and documentation. No runtime download paths are changed.
-- **Adding new hosts:** Only observed hosts are allowed.
+1. HTTPS absolute URLs only; reject relative and protocol-relative `Location`
+   values until their handling is explicitly approved.
+2. Validate both source and destination against the exact observed host pair.
+3. Reject userinfo, non-default ports, IP literals, look-alikes, trailing-dot
+   hosts, and percent-encoded authorities before trusting WHATWG normalization.
+4. Attach Authorization only to HTTPS requests to the exact API host. Reject
+   unsafe URL authorities before making a request, and never send the token to
+   release download URLs or redirect destinations. Runtime request helpers
+   and the candidate header helper enforce this rule independently of
+   redirect approval.
+5. Permit no more than three hops. A future runtime implementation must use a
+   single 120-second wall-clock deadline for the entire chain, not reset the
+   timeout at each hop, and must retain the asset-size limit.
+6. Reject any unlisted or unobserved transition and preserve source-build
+   fallback only where the existing integrity mode permits it.
+
+`MAX_REDIRECT_HOPS` is a candidate-policy cap only; it does not mean three
+redirects have been observed. The only recorded transition has one hop.
+
+## Threats and verification
+
+- Token leakage: unsafe URLs never receive an Authorization header; runtime
+  asset requests carry no token and redirects are not followed.
+- Downgrade and host spoofing: the candidate validator requires HTTPS and
+  exact hosts at both ends of a hop.
+- Authority ambiguity: percent escapes in absolute or protocol-relative
+  authorities are rejected before URL parsing; relative and protocol-relative
+  targets are rejected outright.
+- Unbounded chains: the candidate policy caps hops, and any approved runtime
+  implementation must enforce one total time budget for the complete download.
+
+Tests in `tests/unit/download-policy.test.ts` cover candidate URL validation
+and credentials. `tests/unit/canary.test.ts` pins the current runtime behavior:
+one request, no `Location` follow-up, partial-file cleanup, and bounded total
+download time. Integration tests cover the Engine source fallback and the
+strict-integrity rejection path.
