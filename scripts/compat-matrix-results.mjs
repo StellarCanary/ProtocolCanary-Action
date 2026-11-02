@@ -21,6 +21,7 @@ const COUNT_FIELDS = ["total", "passed", "failed", "warnings", "errors"];
 const PROJECT_TYPES = new Set(["soroban", "rpc-consumer", "stellar-sdk", "generic-stellar", "unknown"]);
 const RESULT_SURFACES = new Set(["xdr", "rpc", "soroban"]);
 const MAX_DIAGNOSTIC_LENGTH = 512;
+const FIXTURE_PARSE_DIAGNOSTIC = /\b(?:invalid (?:soroban )?fixture(?: body)?|failed to parse fixture|unsupported arg kind)\b/i;
 
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -145,6 +146,11 @@ function firstDiagnostic(report, stderr) {
   return (failureLine ?? stderrLines[0] ?? "").slice(0, MAX_DIAGNOSTIC_LENGTH);
 }
 
+function cliFailureKind(exitCode, hasReport, stderr) {
+  if (hasReport || exitCode === null || exitCode === 0) return null;
+  return FIXTURE_PARSE_DIAGNOSTIC.test(stderr) ? "fixture-parse" : null;
+}
+
 function normalizedStepOutcome(value) {
   return STEP_OUTCOMES.has(value) ? value : "unknown";
 }
@@ -175,6 +181,7 @@ export function createCellFacts({ env = process.env, evidenceDir }) {
   const exitCode = parseExitCode(path.join(evidenceDir, "exit-code.txt"));
   const parsed = parseCliReport(reportPath);
   const report = parsed.report;
+  const diagnostic = firstDiagnostic(report, stderr);
   const checkStepOutcome = env.CHECK_OUTCOME ?? "unknown";
   let checkOutcome = "unknown";
   if (exitCode === 124 || exitCode === 137 || exitCode === 143) checkOutcome = "timeout";
@@ -201,13 +208,14 @@ export function createCellFacts({ env = process.env, evidenceDir }) {
     checkOutcome,
     checkExitCode: exitCode,
     actionStatus: report?.status ?? null,
+    cliFailureKind: cliFailureKind(exitCode, report !== undefined, stderr),
     passed: report?.counts.passed ?? null,
     failures: report?.counts.failed ?? null,
     warnings: report?.counts.warnings ?? null,
     errors: report?.counts.errors ?? null,
     total: report?.counts.total ?? null,
     replayedCount: report?.results.filter((result) => result.source === "cache").length ?? null,
-    firstDiagnostic: firstDiagnostic(report, stderr),
+    firstDiagnostic: diagnostic,
     ranNoChecks: report !== undefined && report.counts.total === 0,
     evidenceError: parsed.error ?? null,
     evidenceFiles: readEvidenceFiles(evidenceDir),
@@ -307,6 +315,9 @@ function validateCellFacts(facts, expected, actionCommit, artifactDirectory) {
   if (facts.actionStatus !== null && !CHECK_STATUSES.has(facts.actionStatus)) {
     return "The artifact has a missing or malformed CLI status.";
   }
+  if (facts.cliFailureKind !== null && facts.cliFailureKind !== "fixture-parse") {
+    return "The artifact has an unknown CLI failure kind.";
+  }
   for (const field of ["passed", "failures", "warnings", "errors", "total", "replayedCount"]) {
     if (facts[field] !== null && !validCount(facts[field])) {
       return `The artifact has an invalid ${field} count.`;
@@ -356,6 +367,15 @@ function validateCellFacts(facts, expected, actionCommit, artifactDirectory) {
   }
   if (requiredFiles.some((name) => !actualFiles.includes(name))) {
     return "The cell artifact is missing required execution evidence files.";
+  }
+  const rawReport = parseCliReport(path.join(artifactDirectory, "report.json"));
+  const rawFailureKind = cliFailureKind(
+    parseExitCode(path.join(artifactDirectory, "exit-code.txt")),
+    rawReport.report !== undefined,
+    readText(path.join(artifactDirectory, "stderr.txt")),
+  );
+  if (facts.cliFailureKind !== rawFailureKind) {
+    return "The artifact CLI failure kind does not match its raw report, exit code, and stderr.";
   }
   return undefined;
 }

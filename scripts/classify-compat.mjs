@@ -22,6 +22,7 @@
  * @property {"success"|"failure"|"timeout"|"cancelled"|"skipped"} buildOutcome - Build outcome.
  * @property {"completed"|"failure"|"timeout"|"cancelled"|"skipped"|"unknown"} checkOutcome - CLI execution outcome.
  * @property {string|null} actionStatus - Status from the validated CLI JSON report.
+ * @property {"fixture-parse"|null} cliFailureKind - A deterministic fixture parser failure inferred from raw CLI evidence.
  * @property {number|null} passed - The CLI report's passed count.
  * @property {number|null} failures - The CLI report's failed count.
  * @property {number|null} warnings - The CLI report's warning count.
@@ -89,6 +90,7 @@ export function classifyCell(facts, expectations) {
     facts.executionMode !== "offline-xdr" ||
     typeof facts.ranNoChecks !== "boolean" ||
     !Array.isArray(facts.evidenceFiles) ||
+    !(facts.cliFailureKind === null || facts.cliFailureKind === "fixture-parse") ||
     (facts.evidenceError !== null && typeof facts.evidenceError !== "string")
   ) {
     return infrastructure("Cell facts are missing required fields or have an unsupported schema.");
@@ -107,6 +109,46 @@ export function classifyCell(facts, expectations) {
   }
   if (facts.checkOutcome === "timeout" || facts.checkOutcome === "cancelled") {
     return infrastructure(`Compatibility check ${facts.checkOutcome}: unable to evaluate compatibility`);
+  }
+  if (facts.cliFailureKind === "fixture-parse") {
+    if (
+      facts.checkOutcome !== "completed" ||
+      !Number.isSafeInteger(facts.checkExitCode) ||
+      facts.checkExitCode === 0 ||
+      facts.actionStatus !== null ||
+      !facts.firstDiagnostic
+    ) {
+      return infrastructure("Fixture parser failure facts are incomplete or inconsistent.");
+    }
+
+    const expectation = expectations.find(
+      (entry) =>
+        entry.engineRef === facts.engineRef &&
+        entry.packRef === facts.packRef &&
+        entry.expectedStatus === "execution-failed" &&
+        facts.firstDiagnostic.includes(entry.failureSignature),
+    );
+    if (expectation) {
+      return {
+        engineRef: facts.engineRef,
+        packRef: facts.packRef,
+        actionCommit: facts.actionCommit,
+        runUrl: facts.runUrl,
+        classification: "expected-incompatible",
+        reason: `Known fixture incompatibility: ${expectation.reason}`,
+        evidence: `Expectation from: ${expectation.runUrl} | This run: ${facts.runUrl}`,
+      };
+    }
+
+    return {
+      engineRef: facts.engineRef,
+      packRef: facts.packRef,
+      actionCommit: facts.actionCommit,
+      runUrl: facts.runUrl,
+      classification: "unexpected-failure",
+      reason: `Engine rejected fixture data before compatibility checks: ${facts.firstDiagnostic}`,
+      evidence: facts.runUrl,
+    };
   }
   if (facts.evidenceError) {
     return infrastructure(

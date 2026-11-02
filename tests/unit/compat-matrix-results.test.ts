@@ -69,6 +69,7 @@ function createArtifact(root: string, cell = onlyCell(), options: {
   engineRef?: string;
   packRef?: string;
   executionMode?: string;
+  stderr?: string;
   factsContent?: string;
 } = {}) {
   const evidenceDir = path.join(root, `cell-facts-${cell.cell_id}`);
@@ -78,12 +79,13 @@ function createArtifact(root: string, cell = onlyCell(), options: {
     return evidenceDir;
   }
 
-  if (options.report !== undefined) {
-    writeFileSync(path.join(evidenceDir, "report.json"), JSON.stringify(options.report));
-  }
+  writeFileSync(
+    path.join(evidenceDir, "report.json"),
+    options.report === undefined ? "" : JSON.stringify(options.report),
+  );
   writeFileSync(path.join(evidenceDir, "build.stdout"), "cargo install succeeded\n");
   writeFileSync(path.join(evidenceDir, "build.stderr"), "");
-  writeFileSync(path.join(evidenceDir, "stderr.txt"), "");
+  writeFileSync(path.join(evidenceDir, "stderr.txt"), options.stderr ?? "");
   writeFileSync(path.join(evidenceDir, "exit-code.txt"), options.exitCode ?? "0");
   const facts = writeCellFacts({
     evidenceDir,
@@ -189,6 +191,43 @@ describe("compatibility matrix cell evidence", () => {
     });
 
     expect(facts.firstDiagnostic).toBe("error: invalid fixture: unsupported fixture body value");
+  });
+
+  it("classifies deterministic fixture parser failures as compatibility failures", () => {
+    const diagnostics = [
+      {
+        exitCode: "3",
+        stderr: 'error: soroban error: invalid soroban fixture body in fixtures/protocol-28/soroban/p28-soroban-sim-error-arg-type.toml: unsupported arg kind "i128"',
+      },
+      {
+        exitCode: "4",
+        stderr: 'error: invalid fixture: invalid soroban fixture body in fixtures/protocol-28/soroban/p28-soroban-sim-error-arg-type.toml: unsupported arg kind "i128"',
+      },
+    ];
+
+    for (const { exitCode, stderr } of diagnostics) {
+      const artifactRoot = temporaryDirectory();
+      createArtifact(artifactRoot, onlyCell(), { exitCode, stderr });
+
+      const result = collect(artifactRoot);
+      expect(result.cells[0]!.classification).toBe("unexpected-failure");
+      expect(result.cells[0]!.reason).toContain("Engine rejected fixture data before compatibility checks");
+      expect(result.cells[0]!.reason).toContain("unsupported arg kind \"i128\"");
+      expect(result.cells[0]!.facts?.cliFailureKind).toBe("fixture-parse");
+    }
+  });
+
+  it("keeps report-less RPC transport failures classified as infrastructure", () => {
+    const artifactRoot = temporaryDirectory();
+    createArtifact(artifactRoot, onlyCell(), {
+      exitCode: "3",
+      stderr: "error: RPC request failed: connection refused",
+    });
+
+    const result = collect(artifactRoot);
+    expect(result.cells[0]!.classification).toBe("infrastructure");
+    expect(result.cells[0]!.reason).toContain("Execution evidence is incomplete");
+    expect(result.cells[0]!.facts?.cliFailureKind).toBeNull();
   });
 
   it("classifies a retrieved artifact using its actual execution facts", () => {

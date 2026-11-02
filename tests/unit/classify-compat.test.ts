@@ -34,6 +34,7 @@ const BASE_FACTS = {
   checkOutcome: "completed" as const,
   checkExitCode: 0,
   actionStatus: "pass",
+  cliFailureKind: null,
   passed: 1,
   failures: 0,
   warnings: 0,

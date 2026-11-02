@@ -26,6 +26,7 @@ export interface CellFacts {
   checkOutcome: "completed" | "failure" | "timeout" | "cancelled" | "skipped" | "unknown";
   checkExitCode: number | null;
   actionStatus: "pass" | "warning" | "fail" | "error" | "execution-failed" | null;
+  cliFailureKind: "fixture-parse" | null;
   passed: number | null;
   failures: number | null;
   warnings: number | null;
