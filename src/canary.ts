@@ -195,11 +195,12 @@ async function expectedPublishedBinaryChecksum(
     return undefined;
   }
 
-  const expected = selectExpectedChecksum(checksums, binaryName());
+  const assetName = getReleaseAssetName();
+  const expected = selectExpectedChecksum(checksums, assetName);
   if (expected === undefined) {
     core.warning(
       `Refusing to execute the pre-installed stellar-canary at ${binaryPath}: ` +
-        "the published checksum manifest has no matching binary entry.",
+        `the published checksum manifest has no exact entry for ${assetName ?? `${process.platform}/${process.arch} (no release asset mapping)`}.`,
     );
   }
   return expected;
@@ -365,23 +366,23 @@ interface ReleaseAsset {
   readonly browser_download_url?: unknown;
 }
 
-/** Returns the expected release asset name for the current platform and architecture.
- * This mapping must remain consistent so future prebuilt installs can reuse it. */
-export function getReleaseAssetName(binary: string = binaryName()): string {
-  const ext = process.platform === "win32" ? ".exe" : "";
-  if (process.platform === "linux" && process.arch === "x64") {
-    return `stellar-canary-linux-x86_64${ext}`;
+/** Returns the configured release binary name for a platform and architecture.
+ * A mapping is not evidence that a release publishes that asset. Unknown
+ * targets have no mapping and must never use a generic binary checksum. */
+export function getReleaseAssetName(platform: string = process.platform, arch: string = process.arch): string | undefined {
+  if (platform === "linux" && arch === "x64") {
+    return "stellar-canary-linux-x86_64";
   }
-  if (process.platform === "darwin" && process.arch === "x64") {
-    return `stellar-canary-macos-x86_64${ext}`;
+  if (platform === "darwin" && arch === "x64") {
+    return "stellar-canary-macos-x86_64";
   }
-  if (process.platform === "darwin" && process.arch === "arm64") {
-    return `stellar-canary-macos-aarch64${ext}`;
+  if (platform === "darwin" && arch === "arm64") {
+    return "stellar-canary-macos-aarch64";
   }
-  if (process.platform === "win32" && process.arch === "x64") {
-    return `stellar-canary-windows-x86_64${ext}`;
+  if (platform === "win32" && arch === "x64") {
+    return "stellar-canary-windows-x86_64.exe";
   }
-  return binary;
+  return undefined;
 }
 
 /** GETs a URL as text, authenticating when a token is available and the host is api.github.com.
@@ -425,21 +426,22 @@ export function httpsGetText(url: string, token: string | undefined, maxBytes: n
 
 /** Parses a `sha256sum`-style manifest (`<hex digest>  <filename>` lines,
  * with `*` binary-mode markers and `#` comments tolerated) into a map of
- * file base name to lower-case hex digest. */
+ * exact file name to lower-case hex digest. */
 function parseChecksumManifest(text: string): Map<string, string> {
   const entries = new Map<string, string>();
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
+  for (const line of text.split(/\r?\n/)) {
     if (line === "" || line.startsWith("#")) {
       continue;
     }
-    const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(line);
+    // sha256sum uses one separator space and one mode marker (space or *).
+    // Any remaining whitespace belongs to the filename and must stay exact.
+    const match = /^([0-9a-fA-F]{64}) [ *](.+)$/.exec(line);
     const digest = match?.[1];
     const file = match?.[2];
     if (digest === undefined || file === undefined) {
       continue;
     }
-    entries.set(path.basename(file.trim()), digest.toLowerCase());
+    entries.set(file, digest.toLowerCase());
   }
   return entries;
 }
@@ -447,8 +449,8 @@ function parseChecksumManifest(text: string): Map<string, string> {
 /**
  * Looks up the checksum manifest Protocol-Canary publishes alongside a
  * release, if any. Returns `undefined` — never throws — when no release,
- * no checksum asset, or no parseable manifest is available, so callers can
- * fall back to commit/tag pinning exactly as before.
+ * no checksum asset, or no parseable manifest is available. Callers reject
+ * unverifiable release binaries; source builds do not use this lookup.
  */
 async function lookupPublishedChecksums(version: string, explicitToken?: string): Promise<Map<string, string> | undefined> {
   const token = resolveGithubToken(explicitToken);
@@ -480,23 +482,10 @@ async function lookupPublishedChecksums(version: string, explicitToken?: string)
   }
 }
 
-/** Chooses the manifest entry that corresponds to the binary this runner
- * will execute. For release assets, requires an EXACT match on the release
- * asset name for the current platform/architecture; no fallback to platform
- * match or to a single candidate. */
-export function selectExpectedChecksum(entries: Map<string, string>, binary: string): string | undefined {
-  // For release assets, we must match the exact asset name for this platform
-  const assetName = getReleaseAssetName(binary);
-  const exact = entries.get(assetName);
-  if (exact !== undefined) {
-    return exact;
-  }
-  // Also try matching the actual binary name if different
-  const binExact = entries.get(binary);
-  if (binExact !== undefined) {
-    return binExact;
-  }
-  return undefined;
+/** Selects only the exact requested release asset name. An unmapped target
+ * or a manifest without that name is unverifiable. */
+export function selectExpectedChecksum(entries: Map<string, string>, assetName: string | undefined): string | undefined {
+  return assetName === undefined ? undefined : entries.get(assetName);
 }
 
 /** Fetches the asset list of the Protocol-Canary GitHub release for a bare
@@ -865,10 +854,11 @@ async function verifyInstalledBinary(
       `No published checksum manifest found for Protocol-Canary ${resolved.version} (release asset install). Refusing to use an unverified release asset.`,
     );
   }
-  const expected = selectExpectedChecksum(checksums, binaryName());
+  const assetName = getReleaseAssetName();
+  const expected = selectExpectedChecksum(checksums, assetName);
   if (expected === undefined) {
     throw new InstallationFailedError(
-      `Published checksum manifest for Protocol-Canary ${resolved.version} has no exact entry for this platform/architecture; refusing to use an unverified release asset.`,
+      `Published checksum manifest for Protocol-Canary ${resolved.version} has no exact entry for ${assetName ?? `${process.platform}/${process.arch} (no release asset mapping)`}; refusing to use an unverified release asset.`,
     );
   }
   let actual: string;
@@ -1038,7 +1028,11 @@ async function restoreFromCache(
     core.info(`Restored stellar-canary ${resolved.version} from cache (key: ${key}).`);
     return { binaryPath, version, origin: "source-build" };
   } catch (error) {
-    core.debug(`Cache restore failed, continuing without it: ${String(error)}`);
+    if (error instanceof InstallationFailedError) {
+      core.warning(`Cached stellar-canary failed integrity verification; continuing without it: ${error.message}`);
+    } else {
+      core.debug(`Cache restore failed, continuing without it: ${String(error)}`);
+    }
     return undefined;
   }
 }
@@ -1695,9 +1689,9 @@ async function cargoInstall(
  * The install step is bounded by `installTimeoutMs` and terminated when it
  * exceeds it.
  *
- * `strictIntegrity` (issue #372, default `false`) makes any inability to
- * prove binary integrity against a published checksum fatal instead of a
- * debug-logged degrade; see {@link verifyInstalledBinary}.
+ * `strictIntegrity` (issue #372, default `false`) rejects source builds,
+ * including cached source builds. Release binaries require published
+ * checksum verification in either mode; see {@link verifyInstalledBinary}.
  *
  * `env` is the filtered child environment every install step and probe runs
  * with; see `src/child-env.ts`.

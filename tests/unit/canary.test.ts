@@ -468,7 +468,7 @@ describe("ensureCanaryInstalled", () => {
     fs.chmodSync(path.dirname(candidate), 0o755);
     fs.writeFileSync(candidate, "published binary", { mode: 0o755 });
     fs.chmodSync(candidate, 0o755);
-    mockPublishedChecksums(`${sha256(candidate)}  ${getReleaseAssetName(candidate)}\n`);
+    mockPublishedChecksums(`${sha256(candidate)}  ${getReleaseAssetName()}\n`);
 
     const installed = await ensureCanaryInstalled(RESOLVED);
 
@@ -899,6 +899,30 @@ describe("ensureCanaryInstalled", () => {
   // #424: a source build is never compared against a release checksum. The
   // install succeeds with no manifest lookup at all, and reports at info (not
   // debug) that the commit/tag pin is the integrity anchor.
+  it.each([
+    ["linux", true], ["linux", false],
+    ["darwin", true], ["darwin", false],
+    ["win32", true], ["win32", false],
+  ] as const)("builds 0.2.0 from source on %s with manifest present=%s", async (platform, hasManifest) => {
+    const resolved = { ...RESOLVED, version: "0.2.0", tag: "v0.2.0" };
+    versionProbeResults.push("0.2.0");
+    httpsGetMock.mockImplementation(respond(200, JSON.stringify({
+      assets: hasManifest ? [{ name: "SHA256SUMS", browser_download_url: "https://example.test/SHA256SUMS" }] : [],
+    })));
+
+    await withPlatform(platform, () => withArch("x64", async () => {
+      const installed = await ensureCanaryInstalled(resolved);
+      expect(installed.version).toBe("0.2.0");
+      expect(installed.origin).toBe("source-build");
+      expect(cargoInstallSpawned()).toBe(true);
+      expect(fs.readFileSync(path.join(path.dirname(installed.binaryPath), "stellar-canary.origin"), "utf8").trim())
+        .toBe("source-build");
+    }));
+    expect(httpsGetMock).toHaveBeenCalledTimes(1);
+    expect(httpsGetMock.mock.calls[0]![0]).toBe(`${CANARY_API_REPO_URL}/releases/tags/v0.2.0`);
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(expect.stringContaining("release checksums do not apply to source builds"));
+  });
+
   it("does not compare a source build against a published checksum and logs the pin at info", async () => {
     writeInstalledBinary("binary");
     mockPublishedChecksums(`${sha256(binaryPath())}  stellar-canary\n`);
@@ -1037,42 +1061,98 @@ describe("ensureCanaryInstalled", () => {
   // runner's asset (or binary) is never returned, so a manifest naming only
   // other platforms' binaries yields undefined rather than a wrong-platform
   // digest. (Old #273 contract removed.)
-  it("returns undefined when the manifest names only other platforms' binaries (#424)", () => {
-    const otherPlatforms = (["darwin", "linux", "win32"] as const).filter(
-      (platform) => platform !== process.platform,
-    );
-    const entries = new Map<string, string>([
-      [`stellar-canary-${otherPlatforms[0]}-x64`, "a".repeat(64)],
-      [`stellar-canary-${otherPlatforms[1]}-arm64`, "b".repeat(64)],
-    ]);
-
-    expect(selectExpectedChecksum(entries, platformBinaryName())).toBeUndefined();
-  });
-
-  it("returns the digest only for an exact asset-name match (#424)", () => {
+  it.each([
+    ["linux", "x64", "stellar-canary-linux-x86_64"],
+    ["darwin", "x64", "stellar-canary-macos-x86_64"],
+    ["darwin", "arm64", "stellar-canary-macos-aarch64"],
+    ["win32", "x64", "stellar-canary-windows-x86_64.exe"],
+  ])("selects only the configured exact asset for %s/%s", (platform, arch, assetName) => {
+    expect(getReleaseAssetName(platform, arch)).toBe(assetName);
     const digest = "e".repeat(64);
-    const entries = new Map<string, string>([
-      [`stellar-canary-linux-x86_64`, "a".repeat(64)],
-      [getReleaseAssetName(platformBinaryName()), digest],
+    const entries = new Map([
+      ["stellar-canary", "a".repeat(64)],
+      ["stellar-canary.exe", "b".repeat(64)],
+      ["unrelated-asset", "c".repeat(64)],
+      [assetName, digest],
     ]);
-
-    expect(selectExpectedChecksum(entries, platformBinaryName())).toBe(digest);
+    expect(selectExpectedChecksum(entries, assetName)).toBe(digest);
   });
 
-  it("never hands this runner a different platform's digest (#424)", () => {
-    // A manifest with several per-platform entries but none for this runner:
-    // exactly the macOS/Windows-gets-the-Linux-digest hazard the issue names.
-    const entries = new Map<string, string>([
-      ["stellar-canary-linux-x86_64", "d".repeat(64)],
-      ["stellar-canary-macos-x86_64", "e".repeat(64)],
-      ["stellar-canary-windows-x86_64", "f".repeat(64)],
+  it.each([
+    ["darwin", "x64"],
+    ["darwin", "arm64"],
+    ["win32", "x64"],
+  ])("rejects a Linux-only manifest for %s/%s", (platform, arch) => {
+    // Actual v0.2.0 SHA256SUMS entry; the other platforms are requests,
+    // not a claim that the release publishes binaries for those targets.
+    const entries = new Map([
+      ["stellar-canary-linux-x86_64", "34656189e15169a9f9d339288f7a8a95bb81d86ecee14ca278a165d041d28943"],
     ]);
+    expect(selectExpectedChecksum(entries, getReleaseAssetName(platform, arch))).toBeUndefined();
+    // A generic entry with the same digest must not make it acceptable.
+    entries.set("stellar-canary", entries.get("stellar-canary-linux-x86_64")!);
+    entries.set("stellar-canary.exe", entries.get("stellar-canary-linux-x86_64")!);
+    expect(selectExpectedChecksum(entries, getReleaseAssetName(platform, arch))).toBeUndefined();
+  });
 
-    const selected = selectExpectedChecksum(entries, platformBinaryName());
-    if (selected !== undefined) {
-      // If a digest is handed back it must be this runner's own exact entry.
-      expect(entries.get(getReleaseAssetName(platformBinaryName()))).toBe(selected);
+  it.each(["stellar-canary", "stellar-canary.exe", "stellar-canary-linux-arm64", "Stellar-Canary-Linux-X86_64"])(
+    "rejects the unrelated manifest entry %s even when it is the only candidate",
+    (name) => {
+      expect(selectExpectedChecksum(new Map([[name, "a".repeat(64)]]), "stellar-canary-linux-x86_64"))
+        .toBeUndefined();
+    },
+  );
+
+  it("does not map an unsupported platform or architecture to a generic binary name", () => {
+    const entries = new Map([["stellar-canary", "a".repeat(64)]]);
+    for (const [platform, arch] of [["linux", "arm64"], ["win32", "arm64"], ["freebsd", "x64"]]) {
+      const assetName = getReleaseAssetName(platform, arch);
+      expect(assetName).toBeUndefined();
+      expect(selectExpectedChecksum(entries, assetName)).toBeUndefined();
     }
+  });
+
+  it.each([
+    "stellar-canary", "stellar-canary.exe", "other/ASSET", "./ASSET", "other\\ASSET",
+    " ASSET", "ASSET ", "ASSET\t",
+  ])(
+    "fails closed for a release binary when only the non-exact entry %s has its digest",
+    async (entry) => {
+      writeInstalledBinary("downloaded release binary", "release-asset");
+      const name = entry.replace("ASSET", getReleaseAssetName()!);
+      mockPublishedChecksums(`${sha256(binaryPath())}  ${name}\n`);
+
+      await expect(ensureCanaryInstalled(RESOLVED)).rejects.toThrow(InstallationFailedError);
+      expect(spawnMock).not.toHaveBeenCalled();
+      expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([" ", "*"])("verifies an exact release checksum with sha256sum mode marker %j", async (marker) => {
+    writeInstalledBinary("downloaded release binary", "release-asset");
+    const digest = sha256(binaryPath());
+    mockPublishedChecksums(`# release checksums\r\n\r\n${digest.toUpperCase()} ${marker}${getReleaseAssetName()}\r\n`);
+
+    const installed = await ensureCanaryInstalled(RESOLVED);
+
+    expect(installed.origin).toBe("release-asset");
+    expect(coreMocks.infoMock).toHaveBeenCalledWith(
+      expect.stringContaining("(release asset) against the published SHA-256 checksum"),
+    );
+    expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
+  });
+
+  it("reports both digests when a release binary does not match its exact manifest entry", async () => {
+    writeInstalledBinary("downloaded release binary", "release-asset");
+    const actual = sha256(binaryPath());
+    const expected = "e".repeat(64);
+    mockPublishedChecksums(`${expected}  ${getReleaseAssetName()}\n`);
+
+    const error = await ensureCanaryInstalled(RESOLVED).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(InstallationFailedError);
+    expect((error as Error).message).toContain(expected);
+    expect((error as Error).message).toContain(actual);
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   // #424: a source build performs no manifest lookup, so manifest parsing
@@ -1120,14 +1200,14 @@ describe("ensureCanaryInstalled", () => {
     it("does not select a platform-only entry", () => {
       const entries = new Map<string, string>([[platformOnlyName(), "c".repeat(64)]]);
 
-      expect(selectExpectedChecksum(entries, platformBinaryName())).toBeUndefined();
+      expect(selectExpectedChecksum(entries, getReleaseAssetName())).toBeUndefined();
     });
 
     it("never returns the platform-only digest even when it is the only entry", () => {
       const unrelated = "c".repeat(64);
       const entries = new Map<string, string>([[platformOnlyName(), unrelated]]);
 
-      const selected = selectExpectedChecksum(entries, platformBinaryName());
+      const selected = selectExpectedChecksum(entries, getReleaseAssetName());
       expect(selected).not.toBe(unrelated);
       expect(selected).toBeUndefined();
     });
@@ -1358,6 +1438,22 @@ describe("ensureCanaryInstalled", () => {
       expect(installed.origin).toBe("source-build");
       expect(httpsGetMock).not.toHaveBeenCalled();
       expect(coreMocks.debugMock).not.toHaveBeenCalledWith(expect.stringContaining("Cache restore failed"));
+    });
+
+    it("warns when strict integrity rejects a cached source build before its version probe", async () => {
+      cacheMocks.isFeatureAvailableMock.mockReturnValue(true);
+      cacheMocks.restoreCacheMock.mockImplementationOnce(async (paths: string[]) => {
+        writeCachedFiles(paths, "cached source binary");
+        return "cache-hit-key";
+      });
+
+      await expect(ensureCanaryInstalled(RESOLVED, undefined, undefined, true))
+        .rejects.toThrow(InstallationFailedError);
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("Cached stellar-canary failed integrity verification"));
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("strict-integrity is enabled"));
+      expect(coreMocks.debugMock).not.toHaveBeenCalledWith(expect.stringContaining("Cache restore failed"));
+      expect(spawnMock.mock.calls.some(([, args]) => (args as string[])[0] === "version")).toBe(false);
+      expect(cacheMocks.saveCacheMock).not.toHaveBeenCalled();
     });
 
     it.each([

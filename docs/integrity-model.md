@@ -21,7 +21,7 @@ trusted context to a more trusted one. This Action has five:
 |---|---|---|---|
 | 1 | Workflow author → Action | Action inputs (`action.yml`) | `src/inputs.ts` validation: strict boolean literals, integer formats, `https://`-only `rpc-url` (localhost exempt), `config` must be an existing regular file resolved before forwarding |
 | 2 | GitHub REST API → Action | Release tag/commit resolution, checksum manifests | `src/canary.ts` + `src/version.ts`: HTTPS-only requests, no redirect following, non-200 is an error, malformed JSON/manifests are "unverifiable", never "verified" |
-| 3 | Source build → executed binary | `cargo install --git --locked --rev <commit>` output | Commit pinning (never a mutable tag, never `main`), published-checksum verification when a manifest exists, strict-integrity fail-closed policy (see below) |
+| 3 | Installed binary → executed binary | Source build or downloaded release binary, with recorded origin | Source builds use the resolved commit/tag pin and an install-time digest; downloaded release binaries require the exact asset checksum. Strict mode rejects source builds (see below). |
 | 4 | Engine output → reporting layer | Canary stdout JSON, stderr | `src/output.ts` schema-validated parsing; `src/summary.ts` fences external diagnostics against markdown injection; `src/redact.ts` neutralises workflow-command sequences |
 | 5 | Action → runner OS | Every process launch | `src/runner.ts`: argument arrays only, never a shell string; bounded timeout; SIGTERM/SIGKILL escalation |
 
@@ -36,9 +36,18 @@ for the least-privilege consumption pattern).
 
 - The engine version is pinned to an immutable commit resolved from the
   requested release tag wherever possible.
-- A checksum *mismatch* against a published manifest always aborts
-  (`InstallationFailed`), before the binary runs and before anything is
-  saved to the shared Actions cache.
+- Source-built binaries are never compared with published release
+  checksums. The Action performs no manifest lookup for that origin and
+  explains the commit/tag guarantee at info level. Source builds saved to
+  the Actions cache retain an install-time digest; restoration checks that
+  digest and restores the source-build origin before reuse.
+- Downloaded release binaries require an exact match between the requested
+  platform asset name and the checksum manifest entry. Engine v0.2.0
+  publishes `stellar-canary-linux-x86_64`; neither a generic binary name nor
+  an entry for another platform can substitute for it. Path-prefixed names
+  are not reduced to their basename. A missing exact entry, unavailable
+  manifest, or digest mismatch aborts (`InstallationFailed`) before the
+  downloaded binary runs, in both default and strict modes.
 - The published-checksum lookup never follows a redirect: a 3xx (to any
   domain, allowlisted or not — including `evil.com`-style spoof targets)
   is a failed lookup, and no second request is issued to the `Location`
@@ -71,26 +80,26 @@ stale.
 
 ## The strict-integrity fail-closed policy (issue #372)
 
-The optional `strict-integrity` input (default `false`, so existing
-pipelines keep today's behaviour) changes verification from "abort when
-integrity is *disproven*" to "abort unless integrity is *proven*". With
-`strict-integrity: true` the run fails closed — an `InstallationFailed`
-abort before the binary executes — when:
+The optional `strict-integrity` input (default `false`) rejects source-built
+binaries, including restored source builds. Those binaries have no
+applicable published release checksum, so strict mode must fail closed with an
+`InstallationFailed` error before executing them. It does not try to use a
+checksum from a different build to establish integrity.
 
-1. no published checksum manifest exists for the resolved release (or the
-   lookup could not complete over an authenticated HTTPS channel, which
-   includes a redirected or unencrypted response);
-2. a manifest exists but has no entry for this platform/architecture;
-3. the manifest's digest does not match the binary (already fatal in both
-   modes).
+Downloaded release binaries must pass published checksum verification in
+both modes. A missing manifest, a missing exact platform asset entry, a
+failed lookup, or a mismatched digest aborts before the downloaded binary
+executes. If no usable prebuilt candidate exists before download, the Action
+may fall back to a source build; strict mode rejects that source build.
 
 | Condition | `strict-integrity: false` (default) | `strict-integrity: true` |
 |---|---|---|
-| Manifest matches binary | proceed, digest in summary | proceed, digest in summary |
-| Checksum mismatch | abort | abort |
-| No manifest published | proceed on commit/tag pinning (debug note) | **abort — fail closed** |
-| No manifest entry for this platform | proceed on commit/tag pinning (debug note) | **abort — fail closed** |
-| Manifest lookup redirected / non-HTTPS | proceed on commit/tag pinning (debug note) | **abort — fail closed** |
+| Source build, including cache restoration | proceed on commit/tag pinning and install-time digest, info log | abort without a release checksum lookup |
+| Release binary matches its exact asset checksum | proceed, digest in summary | proceed, digest in summary |
+| Release binary checksum mismatch | abort | abort |
+| Release verification has no manifest | abort | abort |
+| Release verification has no exact asset entry | abort | abort |
+| Release manifest lookup redirected / non-HTTPS | abort | abort |
 
 Strict mode raises the integrity bar only as high as D-07 allows: it
 proves the artifact matches what its release published, not who published
@@ -99,8 +108,8 @@ it.
 ## Provenance & Trust summary section (issue #373)
 
 `src/summary.ts` renders a per-run table with the executed engine's
-version, the SHA-256 of the binary as observed by published-checksum
-verification, and the fixture-pack digest once the download pipeline
+version, the SHA-256 computed directly from the executed binary,
+and the fixture-pack digest once the download pipeline
 (#338) produces one. Metadata a run does not actually have is rendered as
 explicitly *unverified*, never omitted and never fabricated, and the
 section always carries the D-07/D-11 caveat so a summary screenshot cannot
@@ -124,7 +133,7 @@ binary it runs and the channels it verifies it over.
 |---|---|---|
 | Tampered release artifact | Substituted binary after publication | Checksum mismatch aborts before execution and before cache save (`src/canary.ts`) |
 | Cache poisoning | Malicious entry under a predictable Actions cache key | Cache key embeds platform, arch, and the immutable commit (`stellar-canary-<platform>-<arch>-<sha>`); restored binaries are re-verified; a verification failure never saves |
-| Redirect to attacker host | 3xx response during release/manifest lookup | Never followed (D-11 strictest reading); lookup degrades or, under strict-integrity, aborts |
+| Redirect to attacker host | 3xx response during release/manifest lookup | Never followed (D-11 strictest reading); release checksum verification fails closed, and source builds do not look up release checksums |
 | Downgrade to plaintext | `http://` asset URL | Unconditionally rejected — TLS client only, no second request |
 | Shell injection via inputs or engine output | Argument interpolation, fixture/PR text | Array-spawn only, no shell; inputs validated at boundary 1 |
 | Markdown / workflow-command injection via engine stderr | Diagnostic text in summary or logs | Fenced with CommonMark-longer fences (`src/summary.ts`) and neutralised (`src/redact.ts`) |

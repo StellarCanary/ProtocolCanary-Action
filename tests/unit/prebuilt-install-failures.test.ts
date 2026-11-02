@@ -27,7 +27,7 @@ const coreMocks = vi.hoisted(() => ({
 const { execMock } = vi.hoisted(() => ({ execMock: vi.fn() }));
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 const httpsGetMock = vi.hoisted(() => vi.fn());
-const osMocks = vi.hoisted(() => ({ homedirMock: vi.fn() }));
+const osMocks = vi.hoisted(() => ({ homedirMock: vi.fn(), tmpdirMock: vi.fn() }));
 const fsMocks = vi.hoisted(() => ({ createReadStreamMock: vi.fn() }));
 
 vi.mock("@actions/cache", () => ({
@@ -59,7 +59,7 @@ vi.mock("node:https", () => ({
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof osModule>();
-  return { ...actual, homedir: osMocks.homedirMock };
+  return { ...actual, homedir: osMocks.homedirMock, tmpdir: () => osMocks.tmpdirMock() ?? actual.tmpdir() };
 });
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -163,6 +163,7 @@ async function withArch<T>(arch: string, run: () => Promise<T> | T): Promise<T> 
 
 
 describe("prebuilt release install failure paths (#495)", () => {
+  let tempRoot: string;
   let tempCargoHome: string;
   let originalCargoHome: string | undefined;
   let originalRunnerTemp: string | undefined;
@@ -175,7 +176,7 @@ describe("prebuilt release install failure paths (#495)", () => {
   const DOWNLOAD_URL = "https://example.test/prebuilt-download";
   const MANIFEST_URL = "https://example.test/SHA256SUMS";
   const archiveBytes = Buffer.from("test-archive-payload");
-  const manifest = `${crypto.createHash("sha256").update(archiveBytes).digest("hex")}  ${LINUX_X64_ASSET}\n`;
+  const manifest = `${sha256(`extracted-from-${LINUX_X64_ASSET}`)}  stellar-canary-linux-x86_64\n`;
 
   function sha256(contents: string): string {
     return crypto.createHash("sha256").update(contents).digest("hex");
@@ -283,6 +284,11 @@ describe("prebuilt release install failure paths (#495)", () => {
   }
 
   beforeEach(() => {
+    // Keep staging assertions and cleanup local to this test. Other workers
+    // can run prebuilt installs concurrently in the system temporary directory.
+    osMocks.tmpdirMock.mockReset();
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "canary-failures-test-"));
+    osMocks.tmpdirMock.mockReturnValue(tempRoot);
     tempCargoHome = fs.mkdtempSync(path.join(os.tmpdir(), "canary-failures-cargo-home-"));
     fs.mkdirSync(path.join(tempCargoHome, "bin"), { recursive: true });
     originalCargoHome = process.env.CARGO_HOME;
@@ -369,13 +375,8 @@ describe("prebuilt release install failure paths (#495)", () => {
     }
     fs.rmSync(tempCargoHome, { recursive: true, force: true });
     fs.rmSync(tempToolCache, { recursive: true, force: true });
-    for (const dir of getStagingDirs()) {
-      try {
-        fs.rmSync(path.join(os.tmpdir(), dir), { recursive: true, force: true });
-      } catch {
-        // ignore
-      }
-    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    osMocks.tmpdirMock.mockReset();
   });
 
   describe("httpsGetFile download failure branches", () => {
@@ -585,14 +586,15 @@ describe("prebuilt release install failure paths (#495)", () => {
       expect(cargoInstallSpawned()).toBe(false);
     });
 
-    it("fails closed when the manifest has no exact platform binary entry", async () => {
+    it.each(["other-asset.tar.gz", "stellar-canary", "stellar-canary.exe", "other/stellar-canary-linux-x86_64"])("fails closed when the manifest only names %s", async (entry) => {
       serveRelease({
-        manifestBody: `${"a".repeat(64)}  other-asset.tar.gz\n`,
+        manifestBody: `${sha256(`extracted-from-${LINUX_X64_ASSET}`)}  ${entry}\n`,
       });
 
       await expect(withPlatform("linux", () => withArch("x64", () => ensureCanaryInstalled(RESOLVED))))
         .rejects.toThrow(InstallationFailedError);
       expect(cargoInstallSpawned()).toBe(false);
+      assertNeverExecutedDownloadedFiles();
     });
 
     it("fails closed when hashing the installed release binary fails", async () => {
@@ -641,7 +643,7 @@ describe("prebuilt release install failure paths (#495)", () => {
 
     it("throws InstallationFailedError on checksum mismatch and saves nothing to cache", async () => {
       serveRelease({
-        manifestBody: `${"e".repeat(64)}  ${LINUX_X64_ASSET}\n`,
+        manifestBody: `${"e".repeat(64)}  stellar-canary-linux-x86_64\n`,
       });
 
       await expect(

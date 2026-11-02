@@ -44,23 +44,25 @@ requirement.
 
 ## Installation integrity
 
-`Protocol-Canary` does not yet publish signed release binaries or
-checksums. This Action installs it from source with `cargo install --git`,
-which:
+Engine v0.2.0 publishes a raw Linux x64 binary and `SHA256SUMS`. The Action's
+prebuilt installer expects a platform archive; when no usable archive exists,
+it builds from source with `cargo install --git`. A published checksum
+establishes data integrity, not release signing or publisher identity.
+Installation uses the following safeguards:
 
 - always uses HTTPS to reach GitHub;
 - installs into an Action-owned directory under `RUNNER_TEMP` and does not
   modify the runner's shared Cargo bin directory or `PATH`;
 - pins the exact requested version (the `version` input) — never `main`,
   never an unpinned "latest";
-- resolves that version's tag to the immutable commit it pointed to at run
+- for source builds, resolves that version's tag to the immutable commit it pointed to at run
   time via the GitHub REST API, and pins `cargo install --rev` to that
   commit — stronger than pinning the (mutable) tag alone;
 - falls back to pinning the tag directly, with a visible warning, only if
   that resolution fails (for example, a transient GitHub API error) —
   this Action never silently falls back to an unpinned or different
   version;
-- uses `--locked`, so the exact dependency versions in `Protocol-Canary`'s
+- for source builds, uses `--locked`, so the exact dependency versions in `Protocol-Canary`'s
   own committed `Cargo.lock` are used rather than whatever the latest
   compatible versions happen to be at build time;
 - never executes a downloaded script — the toolchain performing the build
@@ -77,19 +79,24 @@ which:
 
 ### Checksum verification
 
-- **Source builds (default today):** The Action installs `Protocol-Canary`
+- **Source builds:** The Action installs `Protocol-Canary`
   with `cargo install --git --locked` pinned to an immutable commit when
   available (falling back to the tag). The integrity anchor for source
   builds is that commit/tag pin; release checksums do **not** apply to
   binaries compiled from source. No checksum manifest is downloaded for
-  source builds, and this is logged at `info` level.
-- **Prebuilt release assets (if/when used):** If a binary is obtained as a
+  source builds, and this is logged at `info` level. The optional
+  `strict-integrity: true` policy rejects source builds, including cached
+  source builds, because release checksums cannot verify them.
+- **Downloaded release binaries:** If a binary is obtained as a
   downloaded release asset, this Action downloads the checksum manifest
   published alongside that release, hashes the binary, and compares it
-  against the **exact per-platform asset entry** in the manifest. A mismatch
+  against the **exact per-platform asset name** in the manifest. For example,
+  the published v0.2.0 Linux x64 name is `stellar-canary-linux-x86_64`.
+  Generic binary names, path-prefixed filenames, and other platforms' entries
+  cannot substitute for the requested name. A mismatch
   throws an `InstallationFailedError` and the binary is never executed. A
-  missing manifest or a missing entry for the current platform is a failure
-  for release assets (fail closed).
+  missing manifest, missing exact entry, or unverifiable lookup is a failure
+  for release assets in both strict and default modes (fail closed).
 - **What is not verified:** A hash of a different build (e.g. the
   maintainers' prebuilt binary) is not compared with a locally compiled
   source build. The previous behavior that could compare unrelated
@@ -137,9 +144,11 @@ Candidates that fail any of these checks are warned about and skipped, and
 installation falls back to the verified prebuilt release asset or a source
 build pinned to the requested commit/tag.
 
-Because `Protocol-Canary` does not yet publish checksums, this path is
-effectively inactive today and the safe download/source fallback remains the
-production path. Enabling pre-installed discovery as a default, trusted
+Engine v0.2.0 publishes `SHA256SUMS` for `stellar-canary-linux-x86_64`.
+Pre-installed discovery still requires a successful lookup and an exact
+asset-name match before it executes a candidate. A redirected manifest
+lookup is not followed and cannot satisfy that check. Enabling
+pre-installed discovery as a default, trusted
 fast path requires maintainer security review and approval; until that
 approval is recorded, the implementation remains subject to that review
 and does not bypass the existing checksum, release-metadata, archive, or
