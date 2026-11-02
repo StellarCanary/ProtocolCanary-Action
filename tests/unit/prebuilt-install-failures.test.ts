@@ -27,7 +27,7 @@ const coreMocks = vi.hoisted(() => ({
 const { execMock } = vi.hoisted(() => ({ execMock: vi.fn() }));
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 const httpsGetMock = vi.hoisted(() => vi.fn());
-const osMocks = vi.hoisted(() => ({ homedirMock: vi.fn() }));
+const osMocks = vi.hoisted(() => ({ homedirMock: vi.fn(), tmpdirMock: vi.fn() }));
 const fsMocks = vi.hoisted(() => ({ createReadStreamMock: vi.fn() }));
 
 vi.mock("@actions/cache", () => ({
@@ -59,7 +59,7 @@ vi.mock("node:https", () => ({
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof osModule>();
-  return { ...actual, homedir: osMocks.homedirMock };
+  return { ...actual, homedir: osMocks.homedirMock, tmpdir: () => osMocks.tmpdirMock() ?? actual.tmpdir() };
 });
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -163,6 +163,7 @@ async function withArch<T>(arch: string, run: () => Promise<T> | T): Promise<T> 
 
 
 describe("prebuilt release install failure paths (#495)", () => {
+  let tempRoot: string;
   let tempCargoHome: string;
   let originalCargoHome: string | undefined;
   let originalRunnerTemp: string | undefined;
@@ -283,6 +284,11 @@ describe("prebuilt release install failure paths (#495)", () => {
   }
 
   beforeEach(() => {
+    // Keep staging assertions and cleanup local to this test. Other workers
+    // can run prebuilt installs concurrently in the system temporary directory.
+    osMocks.tmpdirMock.mockReset();
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "canary-failures-test-"));
+    osMocks.tmpdirMock.mockReturnValue(tempRoot);
     tempCargoHome = fs.mkdtempSync(path.join(os.tmpdir(), "canary-failures-cargo-home-"));
     fs.mkdirSync(path.join(tempCargoHome, "bin"), { recursive: true });
     originalCargoHome = process.env.CARGO_HOME;
@@ -367,15 +373,8 @@ describe("prebuilt release install failure paths (#495)", () => {
     } else {
       process.env.PATH = originalPath;
     }
-    fs.rmSync(tempCargoHome, { recursive: true, force: true });
-    fs.rmSync(tempToolCache, { recursive: true, force: true });
-    for (const dir of getStagingDirs()) {
-      try {
-        fs.rmSync(path.join(os.tmpdir(), dir), { recursive: true, force: true });
-      } catch {
-        // ignore
-      }
-    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    osMocks.tmpdirMock.mockReset();
   });
 
   describe("httpsGetFile download failure branches", () => {
