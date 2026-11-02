@@ -157,6 +157,35 @@ describe("compatibility matrix cell evidence", () => {
     ]);
   });
 
+  it("prefers an execution error in stderr over an earlier warning", () => {
+    const evidenceDir = temporaryDirectory();
+    writeFileSync(path.join(evidenceDir, "stderr.txt"), [
+      "warning: the RPC endpoint reports protocol 29, but this run targets protocol 28",
+      "error: invalid fixture: unsupported fixture body value",
+      "",
+    ].join("\n"));
+    writeFileSync(path.join(evidenceDir, "exit-code.txt"), "4\n");
+
+    const facts = writeCellFacts({
+      evidenceDir,
+      env: {
+        CELL_ID: onlyCell().cell_id,
+        ENGINE_REF: "v0.2.0",
+        PACK_REF: "main",
+        ENGINE_COMMIT,
+        FIXTURES_COMMIT,
+        ACTION_COMMIT,
+        RUN_URL,
+        ENGINE_CHECKOUT_OUTCOME: "success",
+        FIXTURES_CHECKOUT_OUTCOME: "success",
+        BUILD_OUTCOME: "success",
+        CHECK_OUTCOME: "success",
+      },
+    });
+
+    expect(facts.firstDiagnostic).toBe("error: invalid fixture: unsupported fixture body value");
+  });
+
   it("classifies a retrieved artifact using its actual execution facts", () => {
     const artifactRoot = temporaryDirectory();
     createArtifact(artifactRoot, onlyCell(), { report: report() });

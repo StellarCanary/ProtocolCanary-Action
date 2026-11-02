@@ -140,7 +140,9 @@ function firstDiagnostic(report, stderr) {
       }
     }
   }
-  return (stderr.trim().split(/\r?\n/).find((line) => line.trim()) ?? "").slice(0, MAX_DIAGNOSTIC_LENGTH);
+  const stderrLines = stderr.trim().split(/\r?\n/).filter((line) => line.trim());
+  const failureLine = stderrLines.find((line) => /^\s*(?:error:|fatal:|failed(?:\s|:))/i.test(line));
+  return (failureLine ?? stderrLines[0] ?? "").slice(0, MAX_DIAGNOSTIC_LENGTH);
 }
 
 function normalizedStepOutcome(value) {
