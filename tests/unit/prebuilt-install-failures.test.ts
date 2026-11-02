@@ -373,6 +373,8 @@ describe("prebuilt release install failure paths (#495)", () => {
     } else {
       process.env.PATH = originalPath;
     }
+    fs.rmSync(tempCargoHome, { recursive: true, force: true });
+    fs.rmSync(tempToolCache, { recursive: true, force: true });
     fs.rmSync(tempRoot, { recursive: true, force: true });
     osMocks.tmpdirMock.mockReset();
   });
