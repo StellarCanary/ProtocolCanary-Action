@@ -173,7 +173,7 @@ describe("prebuilt release install failure paths (#495)", () => {
 
   const RESOLVED: ResolvedVersion = { version: "0.1.0", tag: "v0.1.0", commitSha: "abc123" };
   const LINUX_X64_ASSET = `stellar-canary-${RESOLVED.version}-x86_64-unknown-linux-gnu.tar.gz`;
-  const DOWNLOAD_URL = "https://example.test/prebuilt-download";
+  const DOWNLOAD_URL = "https://github.com/StellarCanary/Protocol-Canary/releases/download/v0.1.0/stellar-canary-0.1.0-x86_64-unknown-linux-gnu.tar.gz";
   const MANIFEST_URL = "https://example.test/SHA256SUMS";
   const archiveBytes = Buffer.from("test-archive-payload");
   const manifest = `${sha256(`extracted-from-${LINUX_X64_ASSET}`)}  stellar-canary-linux-x86_64\n`;
@@ -395,17 +395,20 @@ describe("prebuilt release install failure paths (#495)", () => {
       expect(coreMocks.warningMock).toHaveBeenCalledWith(
         expect.stringMatching(new RegExp(`Failed to download the prebuilt Protocol-Canary asset ${LINUX_X64_ASSET}`)),
       );
-      expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("no followable Location header"));
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(
+        expect.stringContaining("redirects are disabled while D-11 remains blocked"),
+      );
       expect(spawnMock).toHaveBeenCalled();
       assertNeverExecutedDownloadedFiles();
       expect(getStagingDirs()).toEqual([]);
     });
 
-    it("falls back to cargo install on a redirect to an invalid URL", async () => {
+    it("falls back to a source build instead of following the observed GitHub CDN redirect", async () => {
+      const destination = "https://release-assets.githubusercontent.com/signed-release-asset";
       serveRelease({
         onDownload: (res, _req, callback) => {
           res.statusCode = 302;
-          res.headers.location = "http://[invalid-host";
+          res.headers.location = destination;
           callback(res);
           queueMicrotask(() => res.emit("end"));
         },
@@ -417,19 +420,23 @@ describe("prebuilt release install failure paths (#495)", () => {
       expect(coreMocks.warningMock).toHaveBeenCalledWith(
         expect.stringMatching(new RegExp(`Failed to download the prebuilt Protocol-Canary asset ${LINUX_X64_ASSET}`)),
       );
-      expect(coreMocks.warningMock).toHaveBeenCalledWith(expect.stringContaining("invalid redirect target"));
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(
+        expect.stringContaining("redirects are disabled while D-11 remains blocked; falling back to a source install."),
+      );
       expect(spawnMock).toHaveBeenCalled();
+      expect(httpsGetMock.mock.calls.map((call) => String(call[0]))).not.toContain(destination);
       assertNeverExecutedDownloadedFiles();
       expect(getStagingDirs()).toEqual([]);
     });
 
-    it("falls back to cargo install when the redirect limit is exhausted", async () => {
-      let redirectCount = 0;
+    it("does not follow repeated redirect locations and falls back to source in default integrity mode", async () => {
+      let redirectResponses = 0;
+      const destination = "https://github.com/repeated-redirect";
       serveRelease({
         onDownload: (res, _req, callback) => {
-          redirectCount += 1;
+          redirectResponses += 1;
           res.statusCode = 302;
-          res.headers.location = `https://example.test/redirect-${redirectCount}`;
+          res.headers.location = destination;
           callback(res);
           queueMicrotask(() => res.emit("end"));
         },
@@ -441,9 +448,34 @@ describe("prebuilt release install failure paths (#495)", () => {
       expect(coreMocks.warningMock).toHaveBeenCalledWith(
         expect.stringMatching(new RegExp(`Failed to download the prebuilt Protocol-Canary asset ${LINUX_X64_ASSET}`)),
       );
+      expect(redirectResponses).toBe(1);
+      expect(httpsGetMock.mock.calls.map((call) => String(call[0]))).not.toContain(destination);
       expect(spawnMock).toHaveBeenCalled();
+      expect(installed.origin).toBe("source-build");
       assertNeverExecutedDownloadedFiles();
       expect(getStagingDirs()).toEqual([]);
+    });
+
+    it("does not accept the source fallback when strict integrity is enabled", async () => {
+      serveRelease({
+        onDownload: (res, _req, callback) => {
+          res.statusCode = 302;
+          res.headers.location = "https://release-assets.githubusercontent.com/signed-release-asset";
+          callback(res);
+          queueMicrotask(() => res.emit("end"));
+        },
+      });
+
+      await expect(ensureCanaryInstalled(RESOLVED, undefined, undefined, true)).rejects.toThrow(
+        InstallationFailedError,
+      );
+
+      expect(coreMocks.warningMock).toHaveBeenCalledWith(
+        expect.stringContaining("redirects are disabled while D-11 remains blocked; falling back to a source install."),
+      );
+      expect(spawnMock).toHaveBeenCalledWith("cargo", expect.arrayContaining(["install"]), expect.any(Object));
+      expect(spawnMock.mock.calls.some(([, args]) => (args as string[]).includes("version"))).toBe(false);
+      assertNeverExecutedDownloadedFiles();
     });
 
     it("falls back to cargo install on a final status other than 200", async () => {

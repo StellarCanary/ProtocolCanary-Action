@@ -15,6 +15,7 @@ import {
   MAX_RELEASE_ASSET_BYTES,
   readResponseText,
 } from "./http-response";
+import { isExactGithubApiUrl, parseSafeHttpsUrl } from "./safe-url";
 
 import type { ChildProcessEnvironment } from "./child-env";
 import { buildChildEnvironment } from "./child-env";
@@ -259,10 +260,8 @@ function prebuiltAssetName(version: string, triple: string): string {
   return `stellar-canary-${version}-${triple}.tar.gz`;
 }
 
-/** Time bound for one prebuilt-asset download request, and the number of
- * redirects GitHub's asset CDN is allowed before the download is abandoned. */
+/** Maximum wall-clock time for one release archive download. */
 const PREBUILT_DOWNLOAD_TIMEOUT_MS = 120_000;
-const MAX_DOWNLOAD_REDIRECTS = 5;
 
 /**
  * Time bounds for the three small helper child processes the install chain
@@ -279,20 +278,22 @@ export const VERSION_PROBE_TIMEOUT_MS = 30_000;
 export const CARGO_PROBE_TIMEOUT_MS = 30_000;
 export const TAR_EXTRACTION_TIMEOUT_MS = 5 * 60_000;
 
-/** GETs a URL as binary content and writes it to `destPath`, following up to
- * `redirectsLeft` 3xx redirects (GitHub release downloads redirect from
- * `github.com` to a signed object host). Rejects on any non-2xx/3xx response,
- * a timeout, a redirect without a `Location`, an oversized/incomplete body,
- * or a write failure. Failed downloads are closed and removed before rejection. */
-export function httpsGetFile(url: string, destPath: string, redirectsLeft: number): Promise<void> {
+/** GETs one HTTPS GitHub release URL and writes its binary response to
+ * `destPath`. Redirects are rejected while D-11 remains blocked; this path
+ * never parses or requests a Location target. The download has a 120-second
+ * wall-clock budget, an asset-size limit, and partial files are removed on
+ * every failure. */
+export function httpsGetFile(url: string, destPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
     let request: ClientRequest | undefined = undefined;
     let file: fs.WriteStream | undefined;
     let responseBody: IncomingMessage | undefined;
+    const totalTimeout: { handle?: ReturnType<typeof setTimeout> } = {};
     const fail = (error: Error): void => {
       if (settled) return;
       settled = true;
+      if (totalTimeout.handle !== undefined) clearTimeout(totalTimeout.handle);
       responseBody?.destroy();
       request?.destroy();
       const removePartial = (): void => {
@@ -308,51 +309,57 @@ export function httpsGetFile(url: string, destPath: string, redirectsLeft: numbe
     const succeed = (): void => {
       if (!settled) {
         settled = true;
+        if (totalTimeout.handle !== undefined) clearTimeout(totalTimeout.handle);
         resolve();
       }
     };
 
-    request = https.get(url, { headers: { "User-Agent": "ProtocolCanary-Action" }, timeout: PREBUILT_DOWNLOAD_TIMEOUT_MS }, (response) => {
-      const status = response.statusCode ?? 0;
-      if (status >= 300 && status < 400) {
-        const location = response.headers.location;
-        response.resume();
-        if (typeof location !== "string" || location === "" || redirectsLeft <= 0) {
-          fail(new Error(`prebuilt asset download from ${url} returned status ${String(status)} with no followable Location header`));
+    const parsed = parseSafeHttpsUrl(url);
+    if (parsed.url === undefined) {
+      fail(new Error(`release asset URL rejected: ${parsed.reason}`));
+      return;
+    }
+    if (parsed.url.hostname.toLowerCase() !== "github.com") {
+      fail(new Error("release asset URL host is not the observed github.com source host"));
+      return;
+    }
+
+    totalTimeout.handle = setTimeout(
+      () => fail(new Error(`release asset download exceeded its ${PREBUILT_DOWNLOAD_TIMEOUT_MS} ms total time budget`)),
+      PREBUILT_DOWNLOAD_TIMEOUT_MS,
+    );
+    try {
+      request = https.get(url, { headers: { "User-Agent": "ProtocolCanary-Action" } }, (response) => {
+        const status = response.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          response.resume();
+          fail(new Error(`release asset returned HTTP ${String(status)}; redirects are disabled while D-11 remains blocked`));
           return;
         }
-        let next: string;
-        try {
-          next = new URL(location, url).toString();
-        } catch {
-          fail(new Error(`prebuilt asset download from ${url} returned an invalid redirect target ${location}`));
+        if (status !== 200) {
+          response.resume();
+          fail(new Error(`GitHub returned status ${String(status)} for release asset URL`));
           return;
         }
-        httpsGetFile(next, destPath, redirectsLeft - 1).then(succeed, fail);
-        return;
-      }
-      if (status !== 200) {
-        response.resume();
-        fail(new Error(`GitHub returned status ${String(status)} for ${url}`));
-        return;
-      }
-      responseBody = response;
-      file = fs.createWriteStream(destPath);
-      const destination = file;
-      destination.on("error", fail);
-      destination.on("finish", succeed);
-      destination.on("drain", () => response.resume());
-      consumeResponse(response, url, MAX_RELEASE_ASSET_BYTES, (chunk) => {
-        if (!destination.write(chunk)) response.pause();
-      }).then(() => {
-        if (!settled) destination.end();
-      }).catch(fail);
-    });
-    if (settled) request.destroy();
-    request.on("timeout", () => {
-      request?.destroy(new Error(`timed out downloading ${url}`));
-    });
-    request.on("error", fail);
+        responseBody = response;
+        file = fs.createWriteStream(destPath);
+        const destination = file;
+        destination.on("error", fail);
+        destination.on("finish", succeed);
+        destination.on("drain", () => response.resume());
+        consumeResponse(response, url, MAX_RELEASE_ASSET_BYTES, (chunk) => {
+          if (!destination.write(chunk)) response.pause();
+        }).then(() => {
+          if (!settled) destination.end();
+        }).catch(fail);
+      });
+      request.on("timeout", () => {
+        request?.destroy(new Error(`timed out downloading release asset`));
+      });
+      request.on("error", fail);
+    } catch {
+      fail(new Error("could not start HTTPS release asset download"));
+    }
   });
 }
 
@@ -390,11 +397,9 @@ export function getReleaseAssetName(platform: string = process.platform, arch: s
  * incomplete body. Manifest callers supply their smaller dedicated limit. */
 export function httpsGetText(url: string, token: string | undefined, maxBytes: number = MAX_API_RESPONSE_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
-    let hostname: string;
-    try {
-      hostname = new URL(url).hostname;
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)));
+    const parsed = parseSafeHttpsUrl(url);
+    if (parsed.url === undefined) {
+      reject(new Error(`text request URL rejected: ${parsed.reason}`));
       return;
     }
 
@@ -402,7 +407,7 @@ export function httpsGetText(url: string, token: string | undefined, maxBytes: n
       "User-Agent": "ProtocolCanary-Action",
       Accept: "application/vnd.github+json",
     };
-    if (token !== undefined && hostname === "api.github.com") {
+    if (token !== undefined && isExactGithubApiUrl(url)) {
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -772,7 +777,7 @@ export async function downloadVerifiedPack(version: string, protocol: number, to
         `The release v${version} publishes no usable checksum entry for the fixture pack archive ${archive.name}; refusing to extract it.`,
       );
     }
-    await httpsGetFile(archive.browser_download_url, archivePath, MAX_DOWNLOAD_REDIRECTS);
+    await httpsGetFile(archive.browser_download_url, archivePath);
     await extractPrebuiltArchive(archivePath, stagingDir);
     const digest = await downloadAndVerifyPack(archivePath, expectedChecksum, stagingDir);
     core.info(`Verified fixture pack ${archive.name} (digest ${digest}) before extraction.`);
@@ -1440,7 +1445,7 @@ export async function installPrebuiltRelease(
   const extractTmpDir = path.join(stagingDir, "extracted");
   try {
     try {
-      await httpsGetFile(downloadUrl, archivePath, MAX_DOWNLOAD_REDIRECTS);
+      await httpsGetFile(downloadUrl, archivePath);
     } catch (error) {
       core.warning(
         `Failed to download the prebuilt Protocol-Canary asset ${assetName}: ${String(error)}; ` +

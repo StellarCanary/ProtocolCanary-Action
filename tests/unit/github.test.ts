@@ -39,10 +39,68 @@ class FakeRequest extends EventEmitter {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.mocked(https.get).mockReset();
   vi.useRealTimers();
 });
 
 describe("githubFetch", () => {
+  it.each([
+    ["HTTP API URL", "http://api.github.com/repos"],
+    ["userinfo API URL", "https://user:pass@api.github.com/repos"],
+    ["empty userinfo API URL", "https://@api.github.com/repos"],
+    ["percent-encoded API authority", "https://%61pi.github.com/repos"],
+    ["custom-port API URL", "https://api.github.com:8443/repos"],
+    ["control character in API URL", "https://api.github.com/\r\n@attacker.example"],
+  ])("rejects %s before a request can carry credentials", async (_name, url) => {
+    await expect(githubFetch(url, "secret")).rejects.toBeInstanceOf(GitHubRequestError);
+    expect(https.get).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "https://attacker.example/asset",
+    "https://github.com/release/asset",
+    "https://release-assets.githubusercontent.com/asset",
+  ])("does not send an API token to non-API URL %s", async (url) => {
+    let headersSeen: Record<string, string> | undefined;
+    vi.mocked(https.get).mockImplementation((_url, options, callback) => {
+      headersSeen = (options as { headers?: Record<string, string> }).headers;
+      const request = new FakeRequest();
+      const response = new FakeResponse(200);
+      queueMicrotask(() => {
+        (callback as unknown as (response: FakeResponse) => void)(response);
+        queueMicrotask(() => {
+          response.emit("data", "ok");
+          response.emit("end");
+        });
+      });
+      return request as unknown as ReturnType<typeof https.get>;
+    });
+
+    await expect(githubFetch(url, "secret")).resolves.toMatchObject({ body: "ok" });
+    expect(headersSeen?.Authorization).toBeUndefined();
+  });
+
+  it("sends a token to a clean exact GitHub API URL", async () => {
+    let headersSeen: Record<string, string> | undefined;
+    vi.mocked(https.get).mockImplementation((_url, options, callback) => {
+      headersSeen = (options as { headers?: Record<string, string> }).headers;
+      const request = new FakeRequest();
+      const response = new FakeResponse(200);
+      queueMicrotask(() => {
+        (callback as unknown as (response: FakeResponse) => void)(response);
+        queueMicrotask(() => {
+          response.emit("data", "ok");
+          response.emit("end");
+        });
+      });
+      return request as unknown as ReturnType<typeof https.get>;
+    });
+
+    await expect(githubFetch("https://api.github.com/repos/StellarCanary/Protocol-Canary", "secret"))
+      .resolves.toMatchObject({ body: "ok" });
+    expect(headersSeen?.Authorization).toBe("Bearer secret");
+  });
+
   it("retries after a timeout and returns the successful body", async () => {
     vi.useFakeTimers();
     let call = 0;
