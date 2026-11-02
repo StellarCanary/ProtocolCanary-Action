@@ -21,7 +21,7 @@ const COUNT_FIELDS = ["total", "passed", "failed", "warnings", "errors"];
 const PROJECT_TYPES = new Set(["soroban", "rpc-consumer", "stellar-sdk", "generic-stellar", "unknown"]);
 const RESULT_SURFACES = new Set(["xdr", "rpc", "soroban"]);
 const MAX_DIAGNOSTIC_LENGTH = 512;
-const FIXTURE_PARSE_DIAGNOSTIC = /\b(?:invalid (?:soroban )?fixture(?: body)?|failed to parse fixture|unsupported arg kind)\b/i;
+const FIXTURE_PARSE_DIAGNOSTIC = /\b(?:invalid (?:soroban |xdr )?fixture(?: body)?|failed to parse fixture|unsupported arg kind)\b/i;
 
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -203,6 +203,14 @@ describe("compatibility matrix cell evidence", () => {
         exitCode: "4",
         stderr: 'error: invalid fixture: invalid soroban fixture body in fixtures/protocol-28/soroban/p28-soroban-sim-error-arg-type.toml: unsupported arg kind "i128"',
       },
+      {
+        exitCode: "3",
+        stderr: 'error: xdr error: invalid xdr fixture body in fixtures/protocol-28/xdr/ledger-entry/p28-xdr-ledger-entry-account-truncated.toml: unsupported XDR type name "LedgerEntry": supported types are: StellarValue, ContractExecutable',
+      },
+      {
+        exitCode: "4",
+        stderr: 'error: invalid fixture: invalid xdr fixture body in fixtures/protocol-28/xdr/ledger-entry/p28-xdr-ledger-entry-account-truncated.toml: unsupported XDR type name "LedgerEntry": supported types are: StellarValue, ContractExecutable, ScVal',
+      },
     ];
 
     for (const { exitCode, stderr } of diagnostics) {
@@ -212,7 +220,7 @@ describe("compatibility matrix cell evidence", () => {
       const result = collect(artifactRoot);
       expect(result.cells[0]!.classification).toBe("unexpected-failure");
       expect(result.cells[0]!.reason).toContain("Engine rejected fixture data before compatibility checks");
-      expect(result.cells[0]!.reason).toContain("unsupported arg kind \"i128\"");
+      expect(result.cells[0]!.reason).toMatch(/unsupported arg kind "i128"|unsupported XDR type name "LedgerEntry"/);
       expect(result.cells[0]!.facts?.cliFailureKind).toBe("fixture-parse");
     }
   });
