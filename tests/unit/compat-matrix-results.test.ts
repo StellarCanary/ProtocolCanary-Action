@@ -68,6 +68,7 @@ function createArtifact(root: string, cell = onlyCell(), options: {
   exitCode?: string;
   engineRef?: string;
   packRef?: string;
+  executionMode?: string;
   factsContent?: string;
 } = {}) {
   const evidenceDir = path.join(root, `cell-facts-${cell.cell_id}`);
@@ -90,6 +91,7 @@ function createArtifact(root: string, cell = onlyCell(), options: {
       CELL_ID: cell.cell_id,
       ENGINE_REF: options.engineRef ?? cell.engine_ref,
       PACK_REF: options.packRef ?? cell.pack_ref,
+      EXECUTION_MODE: options.executionMode ?? "offline-xdr",
       ENGINE_COMMIT,
       FIXTURES_COMMIT,
       ACTION_COMMIT,
@@ -119,6 +121,7 @@ function collect(artifactRoot: string, options: Record<string, unknown> = {}) {
     expectations: [],
     actionCommit: ACTION_COMMIT,
     runUrl: RUN_URL,
+    executionMode: "offline-xdr",
     ...options,
   } as Parameters<typeof collectResults>[0]);
 }
@@ -135,6 +138,7 @@ describe("compatibility matrix cell evidence", () => {
       cellId: cell.cell_id,
       engineRef: "v0.1.1",
       packRef: "protocol-28",
+      executionMode: "offline-xdr",
       engineCommit: ENGINE_COMMIT,
       fixturesCommit: FIXTURES_COMMIT,
       actionCommit: ACTION_COMMIT,
@@ -172,6 +176,7 @@ describe("compatibility matrix cell evidence", () => {
         CELL_ID: onlyCell().cell_id,
         ENGINE_REF: "v0.2.0",
         PACK_REF: "main",
+        EXECUTION_MODE: "offline-xdr",
         ENGINE_COMMIT,
         FIXTURES_COMMIT,
         ACTION_COMMIT,
@@ -192,9 +197,20 @@ describe("compatibility matrix cell evidence", () => {
 
     const result = collect(artifactRoot);
     expect(result.expectedCellCount).toBe(1);
+    expect(result.executionMode).toBe("offline-xdr");
     expect(result.cells[0]!.classification).toBe("supported");
     expect(result.cells[0]!.facts?.engineRef).toBe("v0.1.1");
     expect(result.hasFailures).toBe(false);
+  });
+
+  it("rejects cell artifacts that do not identify the offline execution mode", () => {
+    const artifactRoot = temporaryDirectory();
+    createArtifact(artifactRoot, onlyCell(), { report: report(), executionMode: "live" });
+
+    const result = collect(artifactRoot);
+    expect(result.cells[0]!.classification).toBe("infrastructure");
+    expect(result.cells[0]!.reason).toContain("execution mode");
+    expect(result.hasFailures).toBe(true);
   });
 
   it("classifies missing and malformed artifacts as infrastructure failures", () => {

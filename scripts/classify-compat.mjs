@@ -16,6 +16,7 @@
  * @property {string|null} fixturesCommit - Resolved Fixtures commit SHA from checkout.
  * @property {string} actionCommit - The Action commit SHA that ran the test.
  * @property {string} runUrl - The GitHub Actions run URL for this cell.
+ * @property {"offline-xdr"} executionMode - This matrix enables XDR and disables RPC and Soroban.
  * @property {"success"|"failure"|"cancelled"|"skipped"} engineCheckoutOutcome - Engine checkout outcome.
  * @property {"success"|"failure"|"cancelled"|"skipped"} fixturesCheckoutOutcome - Fixtures checkout outcome.
  * @property {"success"|"failure"|"timeout"|"cancelled"|"skipped"} buildOutcome - Build outcome.
@@ -85,6 +86,7 @@ export function classifyCell(facts, expectations) {
     !facts.packRef ||
     !facts.actionCommit ||
     !facts.runUrl ||
+    facts.executionMode !== "offline-xdr" ||
     typeof facts.ranNoChecks !== "boolean" ||
     !Array.isArray(facts.evidenceFiles) ||
     (facts.evidenceError !== null && typeof facts.evidenceError !== "string")

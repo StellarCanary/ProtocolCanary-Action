@@ -1,4 +1,4 @@
-name: Compatibility Matrix
+name: Offline CLI Compatibility Matrix
 
 on:
   schedule:
@@ -47,7 +47,7 @@ jobs:
         run: node scripts/compat-matrix-inputs.mjs
 
   matrix:
-    name: Compatibility Matrix (${{ matrix.engine_ref }}, ${{ matrix.pack_ref }})
+    name: Offline CLI Compatibility (${{ matrix.engine_ref }}, ${{ matrix.pack_ref }})
     needs: prepare
     if: needs.prepare.result == 'success'
     runs-on: ubuntu-latest
@@ -139,11 +139,12 @@ jobs:
           fi
           echo "binary=${binary}" >> "$GITHUB_OUTPUT"
 
-      - name: Run compatibility check
+      - name: Run offline Engine CLI compatibility check
         id: run-check
         if: steps.build-engine.outcome == 'success'
         env:
           STELLAR_CANARY_BINARY: ${{ steps.build-engine.outputs.binary }}
+          COMPAT_CONFIG: ${{ github.workspace }}/tests/fixtures/real-engine/offline.stellar-canary.toml
         shell: bash
         run: |
           set -euo pipefail
@@ -162,6 +163,7 @@ jobs:
           timeout --foreground --signal=TERM --kill-after=30s 25m \
             "$STELLAR_CANARY_BINARY" check \
             --protocol "$protocol" \
+            --config "$COMPAT_CONFIG" \
             --fixtures-dir "$fixtures_dir" \
             --format json \
             >"${evidence_dir}/report.json" 2>"${evidence_dir}/stderr.txt"
@@ -181,6 +183,7 @@ jobs:
           FIXTURES_COMMIT: ${{ steps.checkout-fixtures.outputs.commit }}
           ACTION_COMMIT: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EXECUTION_MODE: offline-xdr
           ENGINE_CHECKOUT_OUTCOME: ${{ steps.checkout-engine.outcome }}
           FIXTURES_CHECKOUT_OUTCOME: ${{ steps.checkout-fixtures.outcome }}
           BUILD_OUTCOME: ${{ steps.build-engine.outcome }}
@@ -229,15 +232,17 @@ jobs:
           MATRIX_JSON: ${{ needs.prepare.outputs.matrix }}
           ACTION_COMMIT: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EXECUTION_MODE: offline-xdr
           ARTIFACT_ROOT: cell-facts
         run: node scripts/compat-matrix-results.mjs collect
 
-      - name: Print classification table
+      - name: Print offline classification table
         if: always()
         env:
           TABLE: ${{ steps.classify.outputs.TABLE }}
         shell: bash
         run: |
+          printf '%s\n\n' '### Offline Engine CLI compatibility matrix (XDR enabled; RPC and Soroban disabled)' >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$TABLE" ]; then
             printf '%s\n' "$TABLE" >> "$GITHUB_STEP_SUMMARY"
           else

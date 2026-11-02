@@ -12,6 +12,7 @@ export interface CellFactsEnvironment {
   FIXTURES_CHECKOUT_OUTCOME?: string;
   BUILD_OUTCOME?: string;
   CHECK_OUTCOME?: string;
+  EXECUTION_MODE?: string;
 }
 
 export interface MatrixWorkflowIssue {
@@ -26,6 +27,7 @@ export interface MatrixCollectionReport {
   schemaVersion: 1;
   actionCommit: string;
   runUrl: string;
+  executionMode: string;
   expectedCellCount: number;
   cells: Array<ClassifiedCell & { facts: CellFacts | null }>;
   issues: MatrixWorkflowIssue[];
@@ -51,6 +53,7 @@ export function collectResults(options: {
   expectations: ExpectationEntry[] | unknown;
   actionCommit: string;
   runUrl: string;
+  executionMode: string;
 }): MatrixCollectionReport;
 
 export function writeCollectionOutputs(report: MatrixCollectionReport, outputPath: string): void;

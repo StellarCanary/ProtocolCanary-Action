@@ -194,6 +194,7 @@ export function createCellFacts({ env = process.env, evidenceDir }) {
     fixturesCommit: normalizedCommit(env.FIXTURES_COMMIT),
     actionCommit: env.ACTION_COMMIT ?? "",
     runUrl: env.RUN_URL ?? "",
+    executionMode: env.EXECUTION_MODE ?? "",
     engineCheckoutOutcome: normalizedStepOutcome(env.ENGINE_CHECKOUT_OUTCOME ?? "unknown"),
     fixturesCheckoutOutcome: normalizedStepOutcome(env.FIXTURES_CHECKOUT_OUTCOME ?? "unknown"),
     buildOutcome,
@@ -277,6 +278,9 @@ function validateCellFacts(facts, expected, actionCommit, artifactDirectory) {
     return "The artifact Action commit does not match the workflow commit.";
   }
   if (!nonEmptyString(facts.runUrl)) return "The artifact is missing its workflow run URL.";
+  if (facts.executionMode !== "offline-xdr") {
+    return "The artifact has a missing or unsupported execution mode.";
+  }
   if (!STEP_OUTCOMES.has(facts.engineCheckoutOutcome) || !STEP_OUTCOMES.has(facts.fixturesCheckoutOutcome)) {
     return "The artifact has missing or malformed checkout outcomes.";
   }
@@ -396,6 +400,7 @@ export function collectResults({
   expectations = [],
   actionCommit = "",
   runUrl = "",
+  executionMode = "",
 }) {
   const issues = [];
   const cells = [];
@@ -403,6 +408,9 @@ export function collectResults({
 
   if (prepareResult !== "success") {
     issues.push(workflowIssue("prepare", `Matrix preparation ended with ${prepareResult}.`, actionCommit, runUrl));
+  }
+  if (executionMode !== "offline-xdr") {
+    issues.push(workflowIssue("execution-mode", "The workflow did not declare the offline-xdr execution mode.", actionCommit, runUrl));
   }
 
   try {
@@ -479,6 +487,7 @@ export function collectResults({
     schemaVersion: 1,
     actionCommit,
     runUrl,
+    executionMode,
     expectedCellCount: matrix.length,
     cells,
     issues,
@@ -536,6 +545,7 @@ function runCollectCli() {
     expectations,
     actionCommit: process.env.ACTION_COMMIT ?? "",
     runUrl: process.env.RUN_URL ?? "",
+    executionMode: process.env.EXECUTION_MODE ?? "",
   });
   if (expectationsError) {
     report.issues.push(workflowIssue("expectations", expectationsError, report.actionCommit, report.runUrl));

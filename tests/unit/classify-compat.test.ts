@@ -23,6 +23,7 @@ const BASE_FACTS = {
   cellId: "cell-001-abcd1234",
   engineRef: "v0.1.1",
   packRef: "protocol-28",
+  executionMode: "offline-xdr" as const,
   engineCommit: "a".repeat(40),
   fixturesCommit: "b".repeat(40),
   actionCommit: "abc123",
@@ -50,6 +51,15 @@ const EMPTY_EXPECTATIONS: ExpectationEntry[] = [];
 
 describe("classifyCell", () => {
   describe("infrastructure failures", () => {
+    it("rejects a cell that does not identify the offline XDR execution mode", () => {
+      const result = classifyCell(
+        { ...BASE_FACTS, executionMode: "live" as never },
+        EMPTY_EXPECTATIONS,
+      );
+      expect(result.classification).toBe("infrastructure");
+      expect(result.reason).toContain("unsupported schema");
+    });
+
     it("classifies build failure as infrastructure", () => {
       const result = classifyCell(
         { ...BASE_FACTS, buildOutcome: "failure" },

@@ -15,6 +15,7 @@ export interface CellFacts {
   cellId: string;
   engineRef: string;
   packRef: string;
+  executionMode: "offline-xdr";
   engineCommit: string | null;
   fixturesCommit: string | null;
   actionCommit: string;
