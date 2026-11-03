@@ -94,3 +94,18 @@ what changed in that record, with no plan decision edited:
 - A checksum published beside an engine asset protects against corruption, not
   against a compromised release; this Action does not verify signatures because
   none exist.
+
+## Protocol 29 live workflow prerequisite (2026-11-03)
+
+The weekly workflow now pins Fixtures release
+[`fixtures-p29-v0.1.1`](https://github.com/StellarCanary/ProtocolCanary-Fixtures/releases/tag/fixtures-p29-v0.1.1)
+at commit `347ad6846d46b7bdf605a299501354563d79f2d9`. Its only RPC fixture
+uses `get-version-info`. A manual run from Action PR #552 confirmed the
+published Engine `v0.2.0` rejects that method before sending an RPC request;
+the run executed zero checks and did not verify endpoint availability.
+
+Engine `main` supports the method. [Engine PR #626](https://github.com/StellarCanary/Protocol-Canary/pull/626)
+prepares release `v0.3.0`, and the weekly workflow explicitly pins that version.
+Merge and publish the Engine release before merging the Action pin. Then run
+the weekly workflow manually on Testnet and Futurenet and record the result;
+Protocol 28 offline compatibility results do not validate this live path.

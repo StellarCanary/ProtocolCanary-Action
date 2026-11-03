@@ -8,6 +8,7 @@ const REPO_ROOT = path.join(__dirname, "..", "..");
 const WORKFLOW_PATH = path.join(REPO_ROOT, ".github", "workflows", "weekly-live.yml");
 const FIXTURES_COMMIT = "347ad6846d46b7bdf605a299501354563d79f2d9";
 const FIXTURES_RELEASE = "fixtures-p29-v0.1.1";
+const ENGINE_VERSION = "0.3.0";
 
 interface WorkflowStep {
   name?: string;
@@ -38,7 +39,11 @@ describe("weekly Protocol 29 live integration fixture pack", () => {
       ref: `\${{ inputs.fixtures_ref || '${FIXTURES_COMMIT}' }}`,
       "persist-credentials": false,
     });
-    expect(canary?.with).toMatchObject({ protocol: "29", "fixtures-dir": "fixtures/protocol-29" });
+    expect(canary?.with).toMatchObject({
+      version: ENGINE_VERSION,
+      protocol: "29",
+      "fixtures-dir": "fixtures/protocol-29",
+    });
   });
 
   it("keeps the optional manual override, both test networks, and scoped write permission", () => {

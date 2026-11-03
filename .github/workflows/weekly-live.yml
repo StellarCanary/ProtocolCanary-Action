@@ -131,6 +131,10 @@ jobs:
         id: run
         uses: ./ # zizmor: ignore[self-repository] root composite action executed from source within this repository
         with:
+          # Protocol 29's pinned fixture uses get-version-info, which Engine
+          # 0.2.0 does not support. Engine PR #626 prepares the first release
+          # with that method; do not merge this pin until v0.3.0 is published.
+          version: "0.3.0"
           protocol: "29"
           # Pack from the pinned Protocol 29 release above. Update the pin
           # and this path together when adopting another pack (CONTRIBUTING.md,
