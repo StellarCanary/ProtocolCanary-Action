@@ -432,21 +432,21 @@ Action rather than an engine logic defect:
 ## Pinning the fixtures pack (weekly live workflow)
 
 `.github/workflows/weekly-live.yml` checks out
-`StellarCanary/ProtocolCanary-Fixtures` at a recorded immutable commit —
-the full commit SHA behind the `protocol-28` tag, written on the
-"Checkout ProtocolCanary-Fixtures" step — so a scheduled canary changes
-only when the network or the pinned inputs change. A fixture merged into
-the fixtures repository's default branch between runs has no effect on
-Monday's result, and every run prints the commit it actually tested in the
-step summary ("Fixtures pack under test"). This is the same reason the
-repository publishes immutable pack tags in the first place.
+`StellarCanary/ProtocolCanary-Fixtures` at the immutable commit
+`347ad6846d46b7bdf605a299501354563d79f2d9` from the
+[`fixtures-p29-v0.1.1` Protocol 29 release](https://github.com/StellarCanary/ProtocolCanary-Fixtures/releases/tag/fixtures-p29-v0.1.1).
+The full commit SHA is recorded on the "Checkout ProtocolCanary-Fixtures"
+step, so a scheduled canary changes only when the network or pinned inputs
+change. A fixture merged into the Fixtures default branch between runs has
+no effect on Monday's result, and every run prints the commit it actually
+tested in the step summary ("Fixtures pack under test"). This is the same
+reason the repository publishes immutable pack tags in the first place.
 
 **When the pin moves:** only when `ProtocolCanary-Fixtures` publishes a new
-pack release (a new immutable tag — a future `protocol-29`, for example)
-*and* this repository decides to start testing that pack. It never moves
-because something landed on the fixtures default branch, because a network
-changed, or as a side effect of an unrelated pull request here. Each pin
-move is its own pull request.
+pack release with an immutable tag and this repository decides to start
+testing that pack. It never moves because something landed on the fixtures
+default branch, because a network changed, or as a side effect of an
+unrelated pull request here. Each pin move is its own pull request.
 
 **Who approves it:** the repository maintainer
 ([@Hollujay](https://github.com/Hollujay), the [CODEOWNERS](.github/CODEOWNERS)
@@ -457,11 +457,13 @@ owner), recorded as the approving reviewer on that pull request.
 1. resolve the new tag to its full (dereferenced) commit SHA:
 
    ```bash
-   git ls-remote https://github.com/StellarCanary/ProtocolCanary-Fixtures.git refs/tags/<tag>
+   git ls-remote https://github.com/StellarCanary/ProtocolCanary-Fixtures.git 'refs/tags/<tag>*'
    ```
 
    For an annotated tag take the SHA of the `^{}` (peeled) line — that is
-   the commit, not the tag object.
+   the commit, not the tag object. For example, `fixtures-p29-v0.1.1` has
+   tag object `76b3fe289c8483d7240b5440c75657cbb75da59b` and resolves to
+   commit `347ad6846d46b7bdf605a299501354563d79f2d9`.
 2. in `.github/workflows/weekly-live.yml`, replace the SHA in `ref:` on the
    "Checkout ProtocolCanary-Fixtures" step and update that step's comment
    (tag name and both SHAs) in the same commit, so the pin stays recorded

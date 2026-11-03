@@ -83,12 +83,29 @@ what changed in that record, with no plan decision edited:
 ## Risks to watch
 
 - The weekly live integration job (formerly `integration.yml`, now
-  `weekly-live.yml`) has failed since Testnet moved to protocol 29
-  (issue #352, repaired there). It will
-  also fail for 0.2.0 against Protocol 28 identity fixtures. That is expected under
-  decision D-09 and is not a reason to change engine behavior.
+  `weekly-live.yml`) initially failed after Testnet moved to protocol 29
+  (issue #352, repaired there). It now uses the separately pinned Protocol 29
+  Fixtures release. The Protocol 28 fixtures in step 2 above apply only to
+  that offline compatibility run; they do not predict the weekly live result.
+  Record a live result from the weekly workflow itself rather than inferring
+  compatibility from the offline Protocol 28 run.
 - Anyone running a "no fixtures" step on purpose (for example to test their
   workflow wiring) needs `--allow-empty`, which the Action cannot pass today.
 - A checksum published beside an engine asset protects against corruption, not
   against a compromised release; this Action does not verify signatures because
   none exist.
+
+## Protocol 29 live workflow prerequisite (2026-11-03)
+
+The weekly workflow now pins Fixtures release
+[`fixtures-p29-v0.1.1`](https://github.com/StellarCanary/ProtocolCanary-Fixtures/releases/tag/fixtures-p29-v0.1.1)
+at commit `347ad6846d46b7bdf605a299501354563d79f2d9`. Its only RPC fixture
+uses `get-version-info`. A manual run from Action PR #552 confirmed the
+published Engine `v0.2.0` rejects that method before sending an RPC request;
+the run executed zero checks and did not verify endpoint availability.
+
+Engine `main` supports the method. [Engine PR #626](https://github.com/StellarCanary/Protocol-Canary/pull/626)
+prepares release `v0.3.0`, and the weekly workflow explicitly pins that version.
+Merge and publish the Engine release before merging the Action pin. Then run
+the weekly workflow manually on Testnet and Futurenet and record the result;
+Protocol 28 offline compatibility results do not validate this live path.
