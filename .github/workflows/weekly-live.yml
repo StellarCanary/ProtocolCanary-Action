@@ -13,8 +13,8 @@ name: Weekly live integration (Protocol 29)
 # pull requests, so this runs only on the weekly schedule and on manual
 # dispatch.
 #
-# The Fixtures checkout is pinned to the immutable `protocol-28` pack tag
-# (recorded as a full commit SHA on the checkout step) so the scheduled run
+# The Fixtures checkout is pinned to the immutable
+# `fixtures-p29-v0.1.1` release at its full commit SHA. The scheduled run
 # changes only when the network or the pinned inputs change: a fixture
 # merged into ProtocolCanary-Fixtures on Sunday cannot move Monday's result
 # (#419). Each run prints the commit it actually tested in the step
@@ -45,7 +45,7 @@ on:
   workflow_dispatch:
     inputs:
       fixtures_ref:
-        description: ProtocolCanary-Fixtures tag, branch or commit to test instead of the pinned protocol-28 pack (empty = the pin)
+        description: ProtocolCanary-Fixtures tag, branch or commit to test instead of the pinned fixtures-p29-v0.1.1 Protocol 29 pack (empty = the pin)
         required: false
         default: ""
   schedule:
@@ -95,14 +95,15 @@ jobs:
         with:
           repository: StellarCanary/ProtocolCanary-Fixtures
           path: fixtures
-          # Immutable pin (#419): the full commit SHA behind the `protocol-28`
-          # tag (tag object 285d7fc → commit 75ec2c2), recorded here so the
-          # scheduled run tests exactly that pack. Move the pin only when the
-          # fixtures repository publishes a new pack release, in its own PR —
-          # see "Pinning the fixtures pack" in CONTRIBUTING.md. A manual run
-          # overrides this with the `fixtures_ref` workflow input; a ref that
-          # does not exist fails the job at this step.
-          ref: ${{ inputs.fixtures_ref || '75ec2c293a44f09d9c8c1f76722a24a2334ac20a' }}
+          # Immutable pin: fixtures-p29-v0.1.1 is an annotated tag whose
+          # tag object is 76b3fe289c8483d7240b5440c75657cbb75da59b and whose
+          # peeled commit is 347ad6846d46b7bdf605a299501354563d79f2d9. The
+          # scheduled run tests exactly that Protocol 29 pack. Move the pin
+          # only when the fixtures repository publishes another pack release,
+          # in its own PR — see "Pinning the fixtures pack" in CONTRIBUTING.md.
+          # A manual run overrides this with `fixtures_ref`; an unknown ref
+          # fails at checkout.
+          ref: ${{ inputs.fixtures_ref || '347ad6846d46b7bdf605a299501354563d79f2d9' }}
           persist-credentials: false
 
       - name: Record the fixtures pack under test
@@ -116,14 +117,14 @@ jobs:
           if [ -n "${REQUESTED_FIXTURES_REF:-}" ]; then
             requested="${REQUESTED_FIXTURES_REF} (manual fixtures_ref override)"
           else
-            requested="pinned protocol-28 tag (workflow pin)"
+            requested="fixtures-p29-v0.1.1 (workflow pin)"
           fi
           {
             echo "### Fixtures pack under test"
             echo ""
             echo "- Requested ref: \`${requested}\`"
             echo "- Resolved commit: \`${commit}\`"
-            echo "- Pack directory: \`fixtures/protocol-28\`"
+            echo "- Pack directory: \`fixtures/protocol-29\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run Stellar Protocol Canary (this Action, from source)
@@ -131,11 +132,10 @@ jobs:
         uses: ./ # zizmor: ignore[self-repository] root composite action executed from source within this repository
         with:
           protocol: "29"
-          # Pack from the pinned fixtures ref above (`protocol-28`); when
-          # ProtocolCanary-Fixtures ships a Protocol 29 pack, move the pin
-          # and this path in the same PR (CONTRIBUTING.md, "Pinning the
-          # fixtures pack").
-          fixtures-dir: fixtures/protocol-28
+          # Pack from the pinned Protocol 29 release above. Update the pin
+          # and this path together when adopting another pack (CONTRIBUTING.md,
+          # "Pinning the fixtures pack").
+          fixtures-dir: fixtures/protocol-29
           network: ${{ matrix.network }}
           rpc-url: ${{ matrix.rpc-url }}
 
