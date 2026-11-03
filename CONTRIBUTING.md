@@ -494,14 +494,11 @@ tracking issue per failure episode, labelled **`weekly-live`**:
   it with `--reason completed`; a later failure reopens the cycle by
   creating a fresh issue.
 
-The label `weekly-live` must exist in the repository. The job checks for it
-with `gh label list` and fails loudly (`::error::`) if it is missing, rather
-than silently skipping the notification. Create the label once when setting
-up the repository:
-
-```bash
-gh label create weekly-live --description "Single open tracking issue for scheduled weekly live failures"
-```
+The tracker uses `GH_REPO` because its job does not check out a working tree.
+If the label is missing, the job creates it with its existing `issues: write`
+permission before querying or creating the tracking issue. API and permission
+errors still fail the job; they are not treated as a missing label. The
+issue-writing job runs only for the `main` ref, including scheduled runs.
 
 The `track-failure` job is the only job in the workflow granted
 `issues: write`, and it is scoped to that job; every other job stays at the
