@@ -90,6 +90,8 @@ vi.mock("node:os", async (importOriginal) => {
 import {
   ENGINE_ENV_PASSTHROUGH_HINT,
   cargoInstallTimeoutMs,
+  computePackDigest,
+  downloadVerifiedPack,
   ensureCanaryInstalled,
   ensureVerifiedPack,
   getReleaseAssetName,
@@ -101,7 +103,7 @@ import {
   selectExpectedChecksum,
 } from "../../src/canary";
 import { CARGO_INSTALL_TIMEOUT_FLOOR_MS } from "../../src/runner";
-import { CanaryNotFoundError, InstallationFailedError, InvalidInputError } from "../../src/errors";
+import { CanaryNotFoundError, ChecksumMismatchError, InstallationFailedError, InvalidInputError } from "../../src/errors";
 import { REDACTED } from "../../src/redact";
 import type { ResolvedVersion } from "../../src/version";
 import { CANARY_API_REPO_URL, CANARY_REPO_URL } from "../../src/version";
@@ -1772,6 +1774,135 @@ describe("prebuilt release install (issue #359)", () => {
     function prebuiltBinaryPath(): string {
       return path.join(tempCargoHome, "stellar-canary-action", "bin", "stellar-canary");
     }
+
+    describe("downloadVerifiedPack archive verification order (#339, #346)", () => {
+      const packVersion = "1.2.3";
+      const packProtocol = 28;
+      const archiveName = `protocol-${packProtocol}-${packVersion}.tar.gz`;
+      const fixtureRepoApiUrl =
+        `https://api.github.com/repos/StellarCanary/ProtocolCanary-Fixtures/releases/tags/v${packVersion}`;
+      const archiveUrl =
+        `https://github.com/StellarCanary/ProtocolCanary-Fixtures/releases/download/v${packVersion}/${archiveName}`;
+      const manifestUrl = "https://example.test/fixture-SHA256SUMS";
+
+      function sha256Bytes(bytes: Buffer): string {
+        return crypto.createHash("sha256").update(bytes).digest("hex");
+      }
+
+      function packStagingDirs(): string[] {
+        return fs.readdirSync(os.tmpdir())
+          .filter((name) => name.startsWith("protocolcanary-pack-"))
+          .sort();
+      }
+
+      function archiveStagingDirs(): string[] {
+        return fs.readdirSync(os.tmpdir())
+          .filter((name) => name.startsWith("protocolcanary-pack-archive-"))
+          .sort();
+      }
+
+      function serveFixturePack(
+        downloadedBytes: Buffer,
+        publishedArchiveDigest: string,
+        contentLength = downloadedBytes.length,
+      ): void {
+        const releaseBody = JSON.stringify({
+          assets: [
+            { name: archiveName, browser_download_url: archiveUrl },
+            { name: "SHA256SUMS", browser_download_url: manifestUrl },
+          ],
+        });
+        const manifest = `${publishedArchiveDigest}  ${archiveName}\n`;
+
+        httpsGetMock.mockImplementation((url: string, _options: unknown, callback: (response: FakeResponse) => void) => {
+          const response = new FakeResponse(200);
+          const request = new FakeRequest();
+          let body: string | Buffer;
+          if (url === fixtureRepoApiUrl) {
+            body = releaseBody;
+          } else if (url === manifestUrl) {
+            body = manifest;
+          } else if (url === archiveUrl) {
+            body = downloadedBytes;
+            response.headers["content-length"] = String(contentLength);
+          } else {
+            response.statusCode = 404;
+            body = "";
+          }
+
+          callback(response);
+          queueMicrotask(() => {
+            response.emit("data", body);
+            response.emit("end");
+          });
+          return request;
+        });
+      }
+
+      it("rejects a mismatched archive before starting tar and removes staging files", async () => {
+        const stagingBefore = packStagingDirs();
+        const corruptedArchive = Buffer.from("corrupted archive bytes");
+        const publishedArchive = Buffer.from("original published archive bytes");
+        serveFixturePack(corruptedArchive, sha256Bytes(publishedArchive));
+        mockSpawnWithFakeTar(flatExtract);
+
+        await expect(downloadVerifiedPack(packVersion, packProtocol)).rejects.toBeInstanceOf(ChecksumMismatchError);
+
+        expect(spawnMock.mock.calls.filter((call) => call[0] === "tar")).toHaveLength(0);
+        expect(packStagingDirs()).toEqual(stagingBefore);
+      });
+
+      it("rejects a truncated download before starting tar and removes staging files", async () => {
+        const stagingBefore = packStagingDirs();
+        const partialArchive = Buffer.from("truncated archive");
+        serveFixturePack(partialArchive, sha256Bytes(partialArchive), partialArchive.length + 1);
+        mockSpawnWithFakeTar(flatExtract);
+
+        await expect(downloadVerifiedPack(packVersion, packProtocol)).rejects.toThrow("incomplete body");
+
+        expect(spawnMock.mock.calls.filter((call) => call[0] === "tar")).toHaveLength(0);
+        expect(packStagingDirs()).toEqual(stagingBefore);
+      });
+
+      it("cleans archive and pack staging directories when extraction fails", async () => {
+        const stagingBefore = packStagingDirs();
+        const archiveBytes = Buffer.from("published fixture archive bytes");
+        serveFixturePack(archiveBytes, sha256Bytes(archiveBytes));
+        mockSpawnWithFakeTar(() => {
+          throw new Error("fixture extraction failed");
+        });
+
+        await expect(downloadVerifiedPack(packVersion, packProtocol)).rejects.toBeInstanceOf(InstallationFailedError);
+
+        expect(spawnMock.mock.calls.filter((call) => call[0] === "tar")).toHaveLength(1);
+        expect(packStagingDirs()).toEqual(stagingBefore);
+      });
+
+      it("extracts only after the published archive checksum matches, then computes the pack digest", async () => {
+        const archiveBytes = Buffer.from("published fixture archive bytes");
+        const publishedArchiveDigest = sha256Bytes(archiveBytes);
+        const archiveStagingBefore = archiveStagingDirs();
+        let checksumAtExtraction: string | undefined;
+        serveFixturePack(archiveBytes, publishedArchiveDigest);
+        mockSpawnWithFakeTar((archivePath, destDir) => {
+          checksumAtExtraction = sha256Bytes(fs.readFileSync(archivePath));
+          fs.writeFileSync(path.join(destDir, "fixture.toml"), "verified fixture contents\n");
+        });
+
+        const extractedDir = await downloadVerifiedPack(packVersion, packProtocol);
+        try {
+          expect(checksumAtExtraction).toBe(publishedArchiveDigest);
+          expect(spawnMock.mock.calls.filter((call) => call[0] === "tar")).toHaveLength(1);
+          expect(fs.readdirSync(extractedDir)).toEqual(["fixture.toml"]);
+          expect(coreMocks.infoMock).toHaveBeenCalledWith(
+            expect.stringContaining(`computed extracted pack digest ${computePackDigest(extractedDir)}`),
+          );
+          expect(archiveStagingDirs()).toEqual(archiveStagingBefore);
+        } finally {
+          fs.rmSync(extractedDir, { recursive: true, force: true });
+        }
+      });
+    });
 
     beforeEach(() => {
       tempCargoHome = fs.mkdtempSync(path.join(os.tmpdir(), "canary-prebuilt-cargo-home-"));

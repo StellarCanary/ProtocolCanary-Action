@@ -637,12 +637,13 @@ export async function verifyDownloadedArchive(archivePath: string, expectedCheck
 }
 
 /**
- * Verifies a downloaded fixture pack end to end before it is used (#339,
- * #346): the archive must hash to the published checksum and the extracted
- * tree must carry the canonical registry pack digest. The archive checksum is
- * verified first, so a corrupted download aborts before any extraction runs;
- * the canonical pack digest is then checked, and any divergence throws
- * {@link ChecksumMismatchError}.
+ * Checks the published checksum of a downloaded archive and computes the
+ * canonical digest of an already-extracted tree. This helper does not run the
+ * extractor. Callers that control extraction must call
+ * {@link verifyDownloadedArchive} before extraction, then compute or verify
+ * the extracted pack digest afterward. `downloadVerifiedPack` performs those
+ * steps separately to keep the order explicit and avoid hashing the archive
+ * twice.
  */
 export async function downloadAndVerifyPack(
   archivePath: string,
@@ -741,25 +742,28 @@ async function lookupPublishedChecksumsFor(
 
 /**
  * Downloads the canonical fixture pack archive for a pack release tag,
- * verifies it against the published checksum manifest and the canonical
- * registry pack digest, extracts it, and cleans the staging directory up on
- * every exit path (#339, #346).
+ * verifies it against the published checksum manifest before extraction,
+ * then computes the canonical registry pack digest over the extracted files
+ * (#339, #346). The archive uses a separate temporary directory so it is not
+ * included in that pack digest.
  *
  * The archive checksum is verified *before* extraction, so a corrupted or
  * truncated download aborts with a {@link ChecksumMismatchError} and never
  * reaches the extractor; the extracted tree is then checked against the
  * canonical pack digest. Any divergence throws {@link ChecksumMismatchError}.
  *
- * Returns the directory the extracted pack should be consumed from; the
- * staging directory is removed once the verification succeeded, and on every
- * failure path.
+ * Returns the retained directory containing the verified extracted pack. The
+ * archive's temporary directory is always removed, and the pack staging
+ * directory is removed on every failure path.
  */
 export async function downloadVerifiedPack(version: string, protocol: number, token?: string): Promise<string> {
   const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), "protocolcanary-pack-"));
   const archiveName = `protocol-${protocol}-${version}.tar.gz`;
-  const archivePath = path.join(stagingDir, archiveName);
+  let archiveStagingDir: string | undefined;
   let keepStaging = false;
   try {
+    archiveStagingDir = fs.mkdtempSync(path.join(os.tmpdir(), "protocolcanary-pack-archive-"));
+    const archivePath = path.join(archiveStagingDir, archiveName);
     const assets = await fetchReleaseAssetsFor(FIXTURE_PACKS_API_REPO, version, token);
     const archive = assets.find(
       (asset) =>
@@ -778,12 +782,19 @@ export async function downloadVerifiedPack(version: string, protocol: number, to
       );
     }
     await httpsGetFile(archive.browser_download_url, archivePath);
+    const archiveDigest = await verifyDownloadedArchive(archivePath, expectedChecksum);
     await extractPrebuiltArchive(archivePath, stagingDir);
-    const digest = await downloadAndVerifyPack(archivePath, expectedChecksum, stagingDir);
-    core.info(`Verified fixture pack ${archive.name} (digest ${digest}) before extraction.`);
+    const digest = computePackDigest(stagingDir);
+    core.info(
+      `Verified fixture pack archive ${archive.name} (SHA-256 ${archiveDigest}) before extraction; ` +
+        `computed extracted pack digest ${digest}.`,
+    );
     keepStaging = true;
     return stagingDir;
   } finally {
+    if (archiveStagingDir !== undefined) {
+      fs.rmSync(archiveStagingDir, { recursive: true, force: true });
+    }
     if (!keepStaging) {
       fs.rmSync(stagingDir, { recursive: true, force: true });
     }
