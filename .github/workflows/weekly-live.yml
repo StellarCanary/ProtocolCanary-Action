@@ -117,7 +117,7 @@ jobs:
             echo ""
             echo "- Network passphrase: \`${{ matrix.passphrase }}\`"
             echo "- RPC endpoint: ${{ matrix.rpc-url }}"
-            echo "- Target protocol: ${{ env.TARGET_PROTOCOL }}"
+            echo "- Target protocol: ${TARGET_PROTOCOL}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # An unreachable endpoint must fail safely with a clear diagnostic, not
