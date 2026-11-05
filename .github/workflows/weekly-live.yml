@@ -1,51 +1,18 @@
-name: Weekly live integration (Protocol 29)
+name: Weekly live integration (Testnet Protocol 30 identity / Futurenet Protocol 29)
 
-# Exercises the real three-repository pipeline end to end: this Action,
-# the real Protocol-Canary CLI (built from source via `cargo install`),
-# the real StellarCanary/ProtocolCanary-Fixtures pack, and LIVE Protocol 29
-# test-network RPC endpoints. Renamed from `integration.yml` (same weekly
-# schedule) and repaired for Protocol 29 (#352): the old file still targeted
-# Protocol 28 after Testnet/Futurenet moved to protocol 29, so the weekly run
-# failed against the updated networks.
-#
-# This is intentionally separate from ci.yml: Testnet/Futurenet availability
-# must never be a prerequisite for the ordinary unit-test workflow that gates
-# pull requests, so this runs only on the weekly schedule and on manual
-# dispatch.
-#
-# The Fixtures checkout is pinned to the immutable
-# `fixtures-p29-v0.1.1` release at its full commit SHA. The scheduled run
-# changes only when the network or the pinned inputs change: a fixture
-# merged into ProtocolCanary-Fixtures on Sunday cannot move Monday's result
-# (#419). Each run prints the commit it actually tested in the step
-# summary. Scheduled runs always use the pin; a manual dispatch may
-# override it with the `fixtures_ref` input. Moving the pin is documented
-# in CONTRIBUTING.md ("Pinning the fixtures pack").
-#
-# Network configuration (the current Protocol 29 test networks):
-#   testnet  — passphrase "Test SDF Network ; September 2015",
-#              RPC https://soroban-testnet.stellar.org
-#   futurenet — passphrase "Test SDF Future Network ; October 2022",
-#              RPC https://rpc-futurenet.stellar.org
-# The Action selects the network (and therefore the matching passphrase)
-# with `network:`; `rpc-url:` pins the Protocol 29 endpoint explicitly. The
-# passphrase is repeated in `env`/`NETWORK_PASSPHRASE` below so every job
-# log records exactly which network the canary ran against.
-#
-# A failed scheduled run also opens or updates a SINGLE tracking issue
-# labelled `weekly-live` (#420) so the failure has an owner and a timeline
-# instead of only a line in the Actions tab: the `track-failure` job
-# creates the issue on the first failure, comments on it while it stays
-# open, and comments on and closes it when a run goes fully green. The
-# tracking job uses `GH_REPO` because it has no checkout, and creates the
-# `weekly-live` label on first use if it is absent. It runs only for `main`,
-# where the job-scoped `issues: write` token can update the tracking issue.
+# Run published Engine v0.3.0 against independent immutable Fixtures pins.
+# Testnet checks Protocol 30 RPC identity only, not full XDR, Soroban,
+# transaction, Futurenet, or Mainnet Protocol 30 compatibility.
+# Futurenet still runs the published Protocol 29 fixture pack.
+# Live failures are separate from PR-gating CI. Manual fixtures_ref overrides
+# apply to both legs; scheduled runs use the matrix pins.
+# Only the main-branch tracking job writes issues. See CONTRIBUTING.md.
 
 on:
   workflow_dispatch:
     inputs:
       fixtures_ref:
-        description: ProtocolCanary-Fixtures tag, branch or commit to test instead of the pinned fixtures-p29-v0.1.1 Protocol 29 pack (empty = the pin)
+        description: Optional Fixtures ref for both networks; empty uses each network-specific immutable pin
         required: false
         default: ""
   schedule:
@@ -59,13 +26,12 @@ permissions:
   contents: read
 
 env:
-  TARGET_PROTOCOL: "29"
   # The label that identifies the single open tracking issue (#420).
   TRACKING_LABEL: weekly-live
 
 jobs:
   live-check:
-    name: Live canary (Protocol 29 ${{ matrix.network }})
+    name: Live canary (Protocol ${{ matrix.protocol }} ${{ matrix.network }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -75,12 +41,21 @@ jobs:
       matrix:
         include:
           - network: testnet
+            protocol: "30"
+            fixtures_commit: 9feb1a85f64cd43201685fe233bf9ef15a38a752
+            fixtures_label: Protocol 30 Testnet identity (unreleased commit)
+            fixtures_dir: fixtures/protocol-30
             rpc-url: https://soroban-testnet.stellar.org
             passphrase: "Test SDF Network ; September 2015"
           - network: futurenet
+            protocol: "29"
+            fixtures_commit: 347ad6846d46b7bdf605a299501354563d79f2d9
+            fixtures_label: fixtures-p29-v0.1.1 release
+            fixtures_dir: fixtures/protocol-29
             rpc-url: https://rpc-futurenet.stellar.org
             passphrase: "Test SDF Future Network ; October 2022"
     env:
+      TARGET_PROTOCOL: ${{ matrix.protocol }}
       NETWORK_NAME: ${{ matrix.network }}
       NETWORK_RPC_URL: ${{ matrix.rpc-url }}
       NETWORK_PASSPHRASE: ${{ matrix.passphrase }}
@@ -95,21 +70,17 @@ jobs:
         with:
           repository: StellarCanary/ProtocolCanary-Fixtures
           path: fixtures
-          # Immutable pin: fixtures-p29-v0.1.1 is an annotated tag whose
-          # tag object is 76b3fe289c8483d7240b5440c75657cbb75da59b and whose
-          # peeled commit is 347ad6846d46b7bdf605a299501354563d79f2d9. The
-          # scheduled run tests exactly that Protocol 29 pack. Move the pin
-          # only when the fixtures repository publishes another pack release,
-          # in its own PR — see "Pinning the fixtures pack" in CONTRIBUTING.md.
-          # A manual run overrides this with `fixtures_ref`; an unknown ref
-          # fails at checkout.
-          ref: ${{ inputs.fixtures_ref || '347ad6846d46b7bdf605a299501354563d79f2d9' }}
+          # Per-network immutable commits. P30 is a merged Fixtures commit,
+          # not a published release. P29 is the v0.1.1 peeled release commit.
+          ref: ${{ inputs.fixtures_ref || matrix.fixtures_commit }}
           persist-credentials: false
 
       - name: Record the fixtures pack under test
         shell: bash
         env:
           REQUESTED_FIXTURES_REF: ${{ inputs.fixtures_ref }}
+          PINNED_FIXTURES_LABEL: ${{ matrix.fixtures_label }}
+          SELECTED_FIXTURES_DIR: ${{ matrix.fixtures_dir }}
         run: |
           set -euo pipefail
           commit=$(git -C fixtures rev-parse HEAD)
@@ -117,29 +88,24 @@ jobs:
           if [ -n "${REQUESTED_FIXTURES_REF:-}" ]; then
             requested="${REQUESTED_FIXTURES_REF} (manual fixtures_ref override)"
           else
-            requested="fixtures-p29-v0.1.1 (workflow pin)"
+            requested="${PINNED_FIXTURES_LABEL} (workflow pin)"
           fi
           {
             echo "### Fixtures pack under test"
             echo ""
             echo "- Requested ref: \`${requested}\`"
             echo "- Resolved commit: \`${commit}\`"
-            echo "- Pack directory: \`fixtures/protocol-29\`"
+            echo "- Pack directory: \`${SELECTED_FIXTURES_DIR}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run Stellar Protocol Canary (this Action, from source)
         id: run
         uses: ./ # zizmor: ignore[self-repository] root composite action executed from source within this repository
         with:
-          # Protocol 29's pinned fixture uses get-version-info, which Engine
-          # 0.2.0 does not support. Engine PR #626 prepares the first release
-          # with that method; do not merge this pin until v0.3.0 is published.
+          # Engine v0.3.0 supports get-version-info for both selected packs.
           version: "0.3.0"
-          protocol: "29"
-          # Pack from the pinned Protocol 29 release above. Update the pin
-          # and this path together when adopting another pack (CONTRIBUTING.md,
-          # "Pinning the fixtures pack").
-          fixtures-dir: fixtures/protocol-29
+          protocol: ${{ matrix.protocol }}
+          fixtures-dir: ${{ matrix.fixtures_dir }}
           network: ${{ matrix.network }}
           rpc-url: ${{ matrix.rpc-url }}
 
@@ -147,11 +113,11 @@ jobs:
         if: always()
         run: |
           {
-            echo "### Protocol 29 ${{ matrix.network }}"
+            echo "### Protocol ${{ matrix.protocol }} ${{ matrix.network }}"
             echo ""
             echo "- Network passphrase: \`${{ matrix.passphrase }}\`"
             echo "- RPC endpoint: ${{ matrix.rpc-url }}"
-            echo "- Target protocol: ${{ env.TARGET_PROTOCOL }}"
+            echo "- Target protocol: ${TARGET_PROTOCOL}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # An unreachable endpoint must fail safely with a clear diagnostic, not
@@ -161,7 +127,7 @@ jobs:
         if: failure()
         run: |
           {
-            echo "### ❌ Weekly live canary failed (Protocol 29 ${{ matrix.network }})"
+            echo "### ❌ Weekly live canary failed (Protocol ${{ matrix.protocol }} ${{ matrix.network }})"
             echo ""
             echo "- Endpoint: ${{ matrix.rpc-url }}"
             echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -258,7 +224,7 @@ jobs:
             echo "Commented on existing tracking issue #${issue}"
           else
             gh issue create \
-              --title "Weekly live canary is failing (Protocol 29)" \
+              --title "Weekly live canary is failing (Testnet/Futurenet)" \
               --label "$label" \
               --body "The scheduled weekly live canary has failed. Run: ${RUN_URL}"
             echo "Created a new tracking issue for the weekly live failure"
