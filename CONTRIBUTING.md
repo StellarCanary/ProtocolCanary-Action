@@ -429,58 +429,38 @@ Action rather than an engine logic defect:
   Timeout handling and process termination in `src/runner.ts` must account for
   these differences.
 
-## Pinning the fixtures pack (weekly live workflow)
+## Pinning the fixtures packs (weekly live workflow)
 
-`.github/workflows/weekly-live.yml` checks out
-`StellarCanary/ProtocolCanary-Fixtures` at the immutable commit
-`347ad6846d46b7bdf605a299501354563d79f2d9` from the
-[`fixtures-p29-v0.1.1` Protocol 29 release](https://github.com/StellarCanary/ProtocolCanary-Fixtures/releases/tag/fixtures-p29-v0.1.1).
-The full commit SHA is recorded on the "Checkout ProtocolCanary-Fixtures"
-step, so a scheduled canary changes only when the network or pinned inputs
-change. A fixture merged into the Fixtures default branch between runs has
-no effect on Monday's result, and every run prints the commit it actually
-tested in the step summary ("Fixtures pack under test"). This is the same
-reason the repository publishes immutable pack tags in the first place.
+The weekly workflow runs two independent network checks with **Engine v0.3.0**:
 
-**When the pin moves:** only when `ProtocolCanary-Fixtures` publishes a new
-pack release with an immutable tag and this repository decides to start
-testing that pack. It never moves because something landed on the fixtures
-default branch, because a network changed, or as a side effect of an
-unrelated pull request here. Each pin move is its own pull request.
+| Network | Scope | Immutable Fixtures commit | Path |
+| --- | --- | --- | --- |
+| Testnet | Protocol 30 `getVersionInfo.protocolVersion == 30` identity only | `9feb1a85f64cd43201685fe233bf9ef15a38a752` | `fixtures/protocol-30` |
+| Futurenet | Published Protocol 29 pack | `347ad6846d46b7bdf605a299501354563d79f2d9` (`fixtures-p29-v0.1.1`) | `fixtures/protocol-29` |
 
-**Who approves it:** the repository maintainer
-([@Hollujay](https://github.com/Hollujay), the [CODEOWNERS](.github/CODEOWNERS)
-owner), recorded as the approving reviewer on that pull request.
+The Protocol 30 commit is **not a released fixture pack**. Its one Testnet
+RPC identity fixture and evidence were reviewed in Fixtures PRs #488 and
+#489. This check does not establish Protocol 30 XDR, Soroban, transaction
+semantics, Futurenet or Mainnet compatibility. Futurenet still checks the
+released Protocol 29 pack. The workflow never assumes both networks
+have the same current protocol.
 
-**How to move it:**
+Scheduled runs use each matrix leg's immutable commit, protocol and path.
+A manual dispatch may supply `fixtures_ref` to override the checkout
+commit for **both** legs; that ref must contain both selected pack paths
+or the missing-pack check will fail. Overrides never change scheduled pins.
 
-1. resolve the new tag to its full (dereferenced) commit SHA:
-
-   ```bash
-   git ls-remote https://github.com/StellarCanary/ProtocolCanary-Fixtures.git 'refs/tags/<tag>*'
-   ```
-
-   For an annotated tag take the SHA of the `^{}` (peeled) line — that is
-   the commit, not the tag object. For example, `fixtures-p29-v0.1.1` has
-   tag object `76b3fe289c8483d7240b5440c75657cbb75da59b` and resolves to
-   commit `347ad6846d46b7bdf605a299501354563d79f2d9`.
-2. in `.github/workflows/weekly-live.yml`, replace the SHA in `ref:` on the
-   "Checkout ProtocolCanary-Fixtures" step and update that step's comment
-   (tag name and both SHAs) in the same commit, so the pin stays recorded
-   in exactly one place.
-3. if the new pack lives in a different directory, update `fixtures-dir:`
-   (and the workflow name/header comment) in the same commit.
-4. link the fixtures pack release (and its tracking issue, if any) in the
-   pull request description.
-5. run `actionlint .github/workflows/weekly-live.yml` before requesting
-   review.
-
-Manual dispatch runs may override the pin temporarily with the
-`fixtures_ref` input — any tag, branch, or commit, for example to
-candidate-test a pack before moving the pin. Scheduled runs ignore the
-input and always use the recorded SHA. A `fixtures_ref` that does not
-exist fails the job at checkout with the checkout step's own error; that
-is expected and leaves the pin untouched.
+**How to update a pin:** only a maintainer-approved PR may change a
+matrix leg's `fixtures_commit`, `protocol` and `fixtures_dir`. For a
+published pack, resolve the release tag to its peeled commit with
+`git ls-remote ... 'refs/tags/<tag>*'` and cite the release URL.
+For an unreleased Protocol 30 candidate, cite the exact merged Fixtures
+commit and verification evidence; do not describe it as published.
+Keep each network's passphrase, RPC endpoint and other lane unchanged
+unless separately justified by live evidence. Update the tests in
+`tests/unit/weekly-live-fixture-pack.test.ts` and run `actionlint`,
+`zizmor` and the complete test workflow before merging.
+The approving reviewer is the CODEOWNERS maintainer.
 
 ## Tracking weekly live failures
 
@@ -489,7 +469,7 @@ A repeated scheduled failure should not open a new issue every Monday. The
 tracking issue per failure episode, labelled **`weekly-live`**:
 
 - on the **first failing run** it opens a new issue titled
-  "Weekly live canary is failing (Protocol 29)";
+  "Weekly live canary is failing (Testnet/Futurenet)";
 - while the canary stays red it **comments** on that same issue (it never
   opens a second one, even if several runs fail in a row);
 - once a run goes **fully green** it comments on the open issue and closes
