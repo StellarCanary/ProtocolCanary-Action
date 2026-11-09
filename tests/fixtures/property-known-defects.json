@@ -1,0 +1,18 @@
+[
+  {
+    "property": "redact-idempotence",
+    "input": "`",
+    "observed": "\\\\`",
+    "expected": "\\`",
+    "description": "escapeWorkflowCommands replaces every backtick with \\` even when already preceded by a backslash, so redact(redact(x)) prepends another backslash on every call instead of being idempotent.",
+    "issue": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/442"
+  },
+  {
+    "property": "redact-idempotence",
+    "input": ":::",
+    "observed": "\\:\\\\:\\:",
+    "expected": "\\:\\::",
+    "description": "escapeWorkflowCommands replaces non-overlapping '::' pairs with '\\:\\:'; for an odd run of three or more colons, the trailing ':' of the replacement joins the next ':' to leave an unescaped '::' that a second redact() call then escapes.",
+    "issue": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/442"
+  }
+]
