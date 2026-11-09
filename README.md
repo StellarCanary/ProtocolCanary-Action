@@ -803,7 +803,7 @@ The Action's integrity guarantees, trust boundaries, and `strict-integrity` fail
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE). Third-party license notices for the dependencies bundled into `dist/index.js` are provided in [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt) alongside [`dist/index.js.LEGAL.txt`](dist/index.js.LEGAL.txt).
 
 
 ### Optional pull request comment (experimental)
