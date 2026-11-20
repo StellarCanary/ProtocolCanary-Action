@@ -1,0 +1,20 @@
+[
+  {
+    "id": "redact-idempotence-backtick",
+    "property": "redact(redact(x)) === redact(x)",
+    "input": "`",
+    "observedOutput": "\\\\`",
+    "expectedOutput": "\\`",
+    "expectedBehaviour": "redact(redact(\"`\")) should equal redact(\"`\") (\"\\\\`\") without accumulating extra backslashes on already-escaped backticks.",
+    "issue": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/698"
+  },
+  {
+    "id": "redact-idempotence-triple-colon",
+    "property": "redact(redact(x)) === redact(x)",
+    "input": ":::",
+    "observedOutput": "\\:\\\\:\\:",
+    "expectedOutput": "\\:\\::",
+    "expectedBehaviour": "redact(redact(\":::\")) should equal redact(\":::\") (\"\\\\:\\\\::\") without re-escaping the trailing colon pair formed by escaping the first pair.",
+    "issue": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/698"
+  }
+]
