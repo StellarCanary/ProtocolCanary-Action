@@ -15,127 +15,148 @@
       "rule": "del:counts",
       "direction": "schema-rejects/action-accepts",
       "reason": "The schema marks counts as required, but parseReport re-derives counts from results/skipped instead of rejecting the report (CF-01 section 3 requires counts; the Action tolerates engines that predate it rather than discarding an otherwise complete compatibility report).",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Permits backward compatibility with older engine reports omitting explicit counts by re-deriving summary totals from results and skipped arrays."
     },
     {
       "rule": "del:counts.member",
       "direction": "schema-rejects/action-accepts",
       "reason": "A counts object missing any member fails the schema's required list, but the Action's shape check tolerates a missing 'skipped' member and re-derives all counts from results/skipped anyway.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Tolerates missing member within counts object and recalculates summary metrics from results rather than discarding the report."
     },
     {
       "rule": "type:counts",
       "direction": "schema-rejects/action-accepts",
       "reason": "A non-object counts value fails the schema's type keyword; the Action treats any counts value it cannot read as 'not recorded' and re-derives counts instead of rejecting.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Treats non-object counts defensively as unrecorded metadata and recovers accurate counts through results array derivation."
     },
     {
       "rule": "type:counts.member",
       "direction": "schema-rejects/action-accepts",
       "reason": "A non-numeric counts member fails the schema's integer type; the Action's counts shape check fails closed into derivation (counts re-derived from results/skipped) rather than rejecting the report.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Recovers from non-numeric count members by re-deriving valid integer counts from results and skipped lists."
     },
     {
       "rule": "type:network-null",
       "direction": "schema-rejects/action-accepts",
-      "reason": "JSON Schema 'type: object' does not admit null, but the Action deliberately treats an explicit network: null the same as an absent network field — an offline run, never an error.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "JSON Schema 'type: object' does not admit null, but the Action deliberately treats an explicit network: null the same as an absent network field \u2014 an offline run, never an error.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Treats an explicit null network value identically to an absent network field, denoting an offline execution rather than an error."
     },
     {
       "rule": "enum:project.type",
       "direction": "schema-rejects/action-accepts",
       "reason": "The schema constrains project.type to a controlled vocabulary, but the Action only requires it to be a non-empty string: CF-01 says consumers must treat unknown project types as opaque text, not as a reason to discard the report.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Accepts unlisted project type strings as opaque identifiers per CF-01 specification to avoid discarding future engine reports."
     },
     {
       "rule": "noninteger:results[i].protocol",
       "direction": "schema-rejects/action-accepts",
-      "reason": "The schema requires results[].protocol to be an integer, but the Action's result shape check only requires a number — the value is informational (equals targetProtocol) and is never rendered or compared as an integer by the Action.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "The schema requires results[].protocol to be an integer, but the Action's result shape check only requires a number \u2014 the value is informational (equals targetProtocol) and is never rendered or compared as an integer by the Action.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Accepts numeric protocol values without strict integer coercion because protocol is informational metadata."
     },
     {
       "rule": "min:results[i].protocol",
       "direction": "schema-rejects/action-accepts",
       "reason": "The schema floors results[].protocol at 1; the Action only checks it is a number and does not enforce the minimum, for the same reason as the non-integer case.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Permits protocol values below 1 without failing report parsing since protocol values are informational context."
     },
     {
       "rule": "noninteger:results[i].durationMs",
       "direction": "schema-rejects/action-accepts",
       "reason": "The schema requires results[].durationMs to be an integer; the Action only requires a number. CF-01 marks durationMs as unstable data that must never be compared, so a fractional value cannot change a compatibility verdict.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Allows floating-point execution durations because durationMs is unstable timing metadata never used for compatibility verdicts."
     },
     {
       "rule": "min:results[i].durationMs",
       "direction": "schema-rejects/action-accepts",
-      "reason": "The schema floors results[].durationMs at 0; the Action does not enforce the minimum — a negative duration is bad engine data but not a reason to discard an otherwise valid report.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "The schema floors results[].durationMs at 0; the Action does not enforce the minimum \u2014 a negative duration is bad engine data but not a reason to discard an otherwise valid report.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Tolerates negative duration values defensively to preserve valid test execution records and findings."
     },
     {
       "rule": "type:results[i].source",
       "direction": "schema-rejects/action-accepts",
-      "reason": "The schema types results[].source as a string, but the Action's result shape check does not validate source at all — the field is read defensively and unknown values are treated as 'not live', so a wrong-typed value cannot fake compatibility evidence.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "The schema types results[].source as a string, but the Action's result shape check does not validate source at all \u2014 the field is read defensively and unknown values are treated as 'not live', so a wrong-typed value cannot fake compatibility evidence.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Permits non-string source properties by treating unknown or invalid source values defensively as non-live tests."
     },
     {
       "rule": "type:git",
       "direction": "schema-rejects/action-accepts",
-      "reason": "The schema types git as an object; the Action does not validate git at all — it is provenance context rendered defensively, so a malformed value is never a reason to discard a compatibility result.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "The schema types git as an object; the Action does not validate git at all \u2014 it is provenance context rendered defensively, so a malformed value is never a reason to discard a compatibility result.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Treats git provenance metadata defensively so malformed repository context does not invalidate compatibility test findings."
     },
     {
       "rule": "type:verbose",
       "direction": "schema-rejects/action-accepts",
-      "reason": "The schema types verbose as a boolean; the Action does not validate the field — it is informational metadata the Action never reads.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "The schema types verbose as a boolean; the Action does not validate the field \u2014 it is informational metadata the Action never reads.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Ignores type mismatches in verbose flag because verbose output settings are informational metadata never read by the Action."
     },
     {
       "rule": "del:run.toolBuildCommit",
       "direction": "schema-rejects/action-accepts",
-      "reason": "The schema requires run.toolBuildCommit when run is present; the Action does not validate the run object — engine build provenance is copied through to the Execution Receipt defensively, never used for a verdict.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reason": "The schema requires run.toolBuildCommit when run is present; the Action does not validate the run object \u2014 engine build provenance is copied through to the Execution Receipt defensively, never used for a verdict.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Passes through run execution metadata defensively without enforcing toolBuildCommit presence for verdict generation."
     },
     {
       "rule": "enum:skipped[i].surface",
       "direction": "schema-rejects/action-accepts",
       "reason": "The schema constrains skipped[].surface to the three-surface enum, but the Action's skip shape check accepts any non-empty string: skipped entries are planner output, and CF-01 treats their surface as free-form provenance text rather than a controlled vocabulary.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/447",
+      "description": "Permits arbitrary non-empty string surfaces for skipped entries treating surface as free-form planner provenance."
     },
     {
       "rule": "probe:absent-fixture-id",
       "direction": "schema-accepts/action-rejects",
       "reason": "The schema makes results[].fixtureId optional, but the Action requires every result to carry fixtureId as a string or explicit null (results are keyed by (surface, fixtureId) for the duplicate-identity check, so an absent fixtureId would silently change a result's identity).",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Enforces fixtureId presence (as string or null) to guarantee deterministic duplicate identity checks on (surface, fixtureId) pairs."
     },
     {
       "rule": "probe:counts-disagree",
       "direction": "schema-accepts/action-rejects",
       "reason": "The schema cannot express cross-field consistency; the Action rejects a report whose counts disagree with what results/skipped actually contain, because doctored or truncated counts could mask a failure.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Rejects reports where recorded counts conflict with actual results array length to prevent doctored summaries masking failures."
     },
     {
       "rule": "probe:duplicate-identity",
       "direction": "schema-accepts/action-rejects",
-      "reason": "The schema has no uniqueness constraint over results; the Action rejects a report where two results share a (surface, identity) pair, per CF-01 section 4 — a duplicated passing result could otherwise mask a failure.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reason": "The schema has no uniqueness constraint over results; the Action rejects a report where two results share a (surface, identity) pair, per CF-01 section 4 \u2014 a duplicated passing result could otherwise mask a failure.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Rejects reports containing duplicate (surface, fixtureId) result pairs per CF-01 section 4 to prevent masking test failures."
     },
     {
       "rule": "probe:empty-tool-version",
       "direction": "schema-accepts/action-rejects",
-      "reason": "The schema admits an empty toolVersion string; the Action requires it to be non-empty — an empty version is a broken engine build marker, and the field is displayed in annotations and receipts.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reason": "The schema admits an empty toolVersion string; the Action requires it to be non-empty \u2014 an empty version is a broken engine build marker, and the field is displayed in annotations and receipts.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Requires non-empty toolVersion string because blank versions represent corrupt engine builds and are shown in GitHub annotations."
     },
     {
       "rule": "probe:empty-project-name",
       "direction": "schema-accepts/action-rejects",
-      "reason": "The schema admits an empty project.name; the Action requires it non-empty — the name is rendered in the job summary and annotation text, where an empty value would silently produce misleading output.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reason": "The schema admits an empty project.name; the Action requires it non-empty \u2014 the name is rendered in the job summary and annotation text, where an empty value would silently produce misleading output.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Requires non-empty project.name string to ensure meaningful job summary rendering and avoid misleading blank titles."
     },
     {
       "rule": "probe:empty-network-name",
       "direction": "schema-accepts/action-rejects",
-      "reason": "The schema admits an empty network.name string; the Action requires it non-empty — an empty network name would render as a blank identity in annotations while implying a live run was performed.",
-      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431"
+      "reason": "The schema admits an empty network.name string; the Action requires it non-empty \u2014 an empty network name would render as a blank identity in annotations while implying a live run was performed.",
+      "reference": "https://github.com/StellarCanary/ProtocolCanary-Action/issues/431",
+      "description": "Requires non-empty network.name string so live execution identity is never ambiguously rendered as blank in CI annotations."
     }
   ]
 }

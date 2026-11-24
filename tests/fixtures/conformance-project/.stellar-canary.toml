@@ -2,10 +2,20 @@
 # (#370) and by tests/unit/reusable-workflow-conformance.test.ts. It gives the
 # reusable workflow an unambiguous `project-root` whose config and fixture
 # discovery resolve inside the repository's own test suite.
+
+# Configuration schema version (specifies canary configuration format version).
 version = 1
+
+# Pinned Stellar protocol version targeted during conformance testing.
 protocol = 28
 
+# Test surface configuration defining which test suites are active.
 [tests]
+# Enable XDR serialization and deserialization compatibility checks.
 xdr = true
+
+# Disable live RPC endpoint validation in offline conformance test mode.
 rpc = false
+
+# Disable live Soroban smart contract environment checks in offline conformance test mode.
 soroban = false

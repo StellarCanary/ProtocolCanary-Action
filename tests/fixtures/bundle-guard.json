@@ -2,6 +2,8 @@
   "measuredAt": "2026-11-23",
   "committedBundleBytes": 2157190,
   "sizeBudgetBytes": 2200030,
+  "warningThresholdBytes": 2180000,
+  "maxSizeBytes": 2200030,
   "sizeBudgetNote": "Committed dist/index.js is 2,157,190 bytes measured on 2026-11-23: 2,157,138 from main after the #606 option-shaped quoting change, plus 52 bytes for releasing the stdio pipes when a timed-out Canary leaves them open (#600). The 2,200,030-byte budget leaves 42,840 bytes of headroom. Raise deliberately, with a reason, when the bundle legitimately grows.",
   "allowedUrlHosts": [
     {
