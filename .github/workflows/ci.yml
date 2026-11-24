@@ -41,10 +41,11 @@ jobs:
         run: zizmor .github/workflows
 
   test:
-    name: typecheck, lint, test, build (${{ matrix.os }})
+    name: typecheck, lint, test, build (${{ matrix.os }}, node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         # #347: the whole suite runs on all three hosted platforms so path
         # separator, executable-name, and line-ending regressions surface on
