@@ -1,16 +1,63 @@
 # Running this Action on a self-hosted runner.
 #
-# GitHub-hosted Ubuntu runners ship with a Rust/Cargo toolchain, so the
-# other examples under `examples/` can invoke this Action directly. A
-# self-hosted (or otherwise non-Ubuntu) runner does not necessarily have
-# one. Protocol-Canary does not yet publish prebuilt binaries, so this
-# Action installs it from source with `cargo install` — which means the
-# runner needs `cargo` on `PATH` before the Action runs. Install a Rust
-# toolchain first (for example with `dtolnay/rust-toolchain`); otherwise
-# the Action fails early with a clear installation error:
+# ── Prerequisites ────────────────────────────────────────────────────────────
 #
-#   The `cargo` command was not found on this runner. ... on a
-#   self-hosted or non-Ubuntu runner, install one first.
+# Architecture
+#   Prebuilt Protocol-Canary engine binaries are published for x86_64 (amd64)
+#   and arm64 Linux. If your runner uses a different architecture the Action
+#   falls back to a source build via `cargo install`, which requires a Rust
+#   toolchain (see the Install Rust toolchain step below).
+#
+# Node.js runtime
+#   This Action targets the `node24` Actions runtime declared in action.yml.
+#   Any Node.js >= 20 LTS is sufficient to run the TypeScript bundle; Node 24
+#   is recommended and matches what GitHub-hosted runners ship. Verify with:
+#
+#     node --version   # must print v20.x or higher
+#
+# GLIBC version
+#   The prebuilt Linux binaries are compiled against glibc 2.17+ (the minimum
+#   for a Rust-compiled Linux binary targeting x86_64-unknown-linux-gnu).
+#   Most modern distributions (Ubuntu 20.04+, Debian 11+, RHEL 8+) satisfy
+#   this. If your runner uses musl libc (Alpine, some minimal images) the
+#   prebuilt binary will not load; the Action will fall back to a source build.
+#
+# Rust / Cargo (source-build fallback)
+#   GitHub-hosted Ubuntu runners ship with a Rust/Cargo toolchain, so the
+#   other examples under `examples/` can invoke this Action directly. A
+#   self-hosted (or otherwise non-Ubuntu) runner does not necessarily have
+#   one. When a prebuilt binary is unavailable, this Action installs from
+#   source with `cargo install` — which means the runner needs `cargo` on
+#   `PATH` before the Action runs. Install a Rust toolchain first (for example
+#   with `dtolnay/rust-toolchain`); otherwise the Action fails early with a
+#   clear installation error:
+#
+#     The `cargo` command was not found on this runner. ... on a
+#     self-hosted or non-Ubuntu runner, install one first.
+#
+# Firewall / outbound network access
+#   Depending on your runner's network policy, the following outbound HTTPS
+#   connections may be required:
+#
+#   • api.github.com          — resolve the requested engine version tag to its
+#                               immutable commit SHA and fetch the checksum
+#                               manifest (SHA256SUMS) published with the release.
+#   • github.com              — download the prebuilt engine archive from a
+#                               GitHub Release asset, or clone the source
+#                               repository for a `cargo install --git` build.
+#   • objects.githubusercontent.com
+#                             — the CDN that serves GitHub Release asset
+#                               downloads; this host must be reachable when
+#                               downloading prebuilt binaries.
+#   • crates.io / static.crates.io
+#                             — required only for source builds, to fetch
+#                               Cargo dependencies; block these if you want to
+#                               force prebuilt-only installs.
+#   • Your `rpc-url` endpoint — the Soroban/Horizon RPC used for live network
+#                               checks. Omit `network`/`rpc-url` inputs if your
+#                               `.stellar-canary.toml` disables network surfaces.
+#
+# ─────────────────────────────────────────────────────────────────────────────
 name: Stellar Compatibility (self-hosted)
 
 on:
@@ -48,6 +95,9 @@ jobs:
           # `network`/`rpc-url` if your `.stellar-canary.toml` disables the
           # network-dependent surfaces.
           network: testnet
+          # Requires outbound HTTPS to soroban-testnet.stellar.org (see
+          # firewall prerequisites at the top of this file). Remove
+          # `network`/`rpc-url` to run offline against local fixtures only.
           rpc-url: https://soroban-testnet.stellar.org
 
       # Optional: use the Action's own outputs elsewhere in the workflow.

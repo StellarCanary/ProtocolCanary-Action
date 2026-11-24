@@ -75,6 +75,106 @@ actionlint           # static analysis of .github/workflows/
 zizmor .github/workflows # security audit of .github/workflows/
 ```
 
+## Local test execution
+
+### Running the full test suite
+
+```bash
+# Install dependencies (required once, or after any package-lock.json change)
+npm ci
+
+# Type-check all TypeScript source and test files (strict mode, noEmit)
+npm run typecheck
+
+# Run the complete unit + integration suite
+npm test
+```
+
+Both commands must pass before a pull request is considered ready. `npm run typecheck`
+runs `tsc --noEmit` over `src/` and `tests/`, catching type errors that the bundler
+would otherwise silently ignore. `npm test` runs Vitest over `tests/unit/**/*.test.ts`
+and `tests/integration/**/*.test.ts`.
+
+### Running a single test file or filtering by name
+
+Vitest's `--reporter=verbose` flag and name-filter flag work through `npx`:
+
+```bash
+# Run only the tests in one file
+npx vitest run tests/unit/runner.test.ts
+
+# Run all tests whose description matches a substring (case-insensitive)
+npx vitest run --reporter=verbose -t "timeout"
+
+# Run the integration suite only
+npx vitest run tests/integration/
+```
+
+You can also pass a file pattern directly:
+
+```bash
+# Any test file whose name contains "summary"
+npx vitest run tests/unit/summary
+```
+
+### Running with coverage
+
+```bash
+npm run test:coverage
+```
+
+Reports are written to `coverage/` (gitignored). CI enforces the thresholds
+listed under [Coverage](#coverage-thresholds) below; run this locally to verify
+your changes do not lower them.
+
+### TypeScript type-check only
+
+```bash
+npm run typecheck
+```
+
+This is significantly faster than a full build when you only want to confirm
+that your edits are type-correct. It does not write any output files.
+
+### Troubleshooting common issues
+
+**`npm ci` fails with peer-dependency errors**
+Ensure you are using Node 20 or later (`node --version`). The lockfile was
+generated with Node 24; older major versions may surface resolver differences.
+Run `nvm use` in the repository root if you have nvm installed (`.nvmrc` pins
+Node 24).
+
+**Tests fail with `ENOENT: bash` / `ENOENT: jq` / `ENOENT: python3`**
+The reusable-workflow conformance tests need `bash`, `jq`, and `python3` on
+`PATH`. When one is missing, those tests are automatically skipped on a local
+machine (they are not silently skipped in CI — they fail loudly). Install the
+missing tool for your OS or run only the non-conformance tests:
+
+```bash
+npx vitest run tests/unit/runner.test.ts tests/integration/end-to-end.test.ts
+```
+
+**`npm run typecheck` reports errors that did not exist before**
+If you pulled recent upstream changes, re-run `npm ci` first — a type
+definition package may have been updated. If the error is in generated or
+third-party code, check that `skipLibCheck: true` is set in `tsconfig.json`
+(it is by default).
+
+**`npm test` passes locally but CI fails on the coverage gate**
+Coverage thresholds are enforced only by the CI `npm run test:coverage` step,
+not by `npm test`. Run `npm run test:coverage` locally and check the per-file
+table for uncovered lines before pushing.
+
+**`dist/` is out of date**
+CI fails if the committed `dist/index.js` does not match a fresh build. Rebuild
+and commit before pushing:
+
+```bash
+npm run build
+git add dist/
+git commit -m "chore: rebuild dist"
+```
+
 ### Updating job summary goldens
 
 The job summary's exact Markdown output is stored in `tests/golden/` and

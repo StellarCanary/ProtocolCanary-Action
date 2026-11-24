@@ -293,13 +293,25 @@ Credential-bearing RPC URLs are now protected: the Action registers non-empty us
 
 ## Supported versions
 
-| Version | Supported |
-| --- | --- |
-| 0.1.1 | Yes |
-| 0.1.0 | No |
+| Version | Support tier | Security fixes |
+| --- | --- | --- |
+| 0.1.1 | **Active** (latest 0.x) | Yes |
+| 0.1.0 | End of life | No |
 
-Only the latest released `0.x` version of this Action receives security
-fixes while it is pre-1.0; fixes are not backported to older releases.
+**Active** — the most recently released minor version on the current major
+line. Confirmed vulnerabilities receive a patch release. Consumers are
+expected to stay on the latest release.
+
+**Maintenance** — a previous release that still receives critical or
+high-severity security fixes for a limited window after a new minor
+version is published. This project is pre-1.0; no maintenance window is
+currently offered. When the project reaches 1.0, a maintenance tier
+covering the previous major line will be defined here.
+
+**End of life** — no longer supported. Any vulnerability report against an
+end-of-life version will be closed after confirming the latest release is
+unaffected; no patch will be issued.
+
 The table above enumerates every released version from `CHANGELOG.md`,
 so support status never has to be re-derived from the release history.
 
@@ -310,26 +322,91 @@ repository. Confidence in the claims above comes from the implementation
 (argument-array subprocess execution, no shell interpolation, pinned
 commit installation) and its test suite, not from an external review.
 
+## Vulnerability scope
+
+### In scope
+
+The following classes of issue are in scope for this repository:
+
+- **Binary tampering** — a code path that could allow a downloaded or cached
+  `stellar-canary` binary to be replaced, corrupted, or executed without
+  checksum verification passing.
+- **Credential or secret leakage** — any path by which a `GITHUB_TOKEN`,
+  `INPUT_*` secret, RPC credential, or value registered via `core.setSecret`
+  could appear in job logs, annotations, artifacts, or the process environment
+  passed to a child process.
+- **Command injection** — shell-string construction from untrusted input (PR
+  body, fixture data, repository configuration) that reaches `child_process`
+  or `@actions/exec`.
+- **Workflow command injection** — an external output (engine stderr, cargo
+  build output) that bypasses the `::stop-commands::` guard and injects a
+  `::set-env::`, `::add-mask::`, or similar runner command.
+- **Privilege escalation** — an Action consuming this workflow that acquires
+  permissions beyond the `permissions:` block declared in the workflow.
+- **Integrity bypass** — a method to skip checksum verification for a
+  downloaded prebuilt binary, or to load a cached binary that has not been
+  re-verified against its sidecar digest.
+- **Subdirectory escape** — a path in a fixture pack, archive, or manifest
+  that writes outside the intended temporary directory on the runner.
+
+### Out of scope
+
+The following are **not** in scope for this repository:
+
+- Vulnerabilities in `StellarCanary/Protocol-Canary` (the engine binary) or
+  `StellarCanary/ProtocolCanary-Fixtures` (the fixture corpus) — report those
+  to their own security policies.
+- Theoretical attacks that require an already-compromised GitHub Actions runner
+  or workflow host.
+- Self-XSS or cosmetic issues in the job summary Markdown that do not lead to
+  credential exposure or code execution.
+- Reports against unsupported (end-of-life) versions where the latest release
+  is unaffected.
+- Low-severity informational findings without a practical exploit path in the
+  Actions execution model (the runner is ephemeral, the job environment is
+  discarded after each run).
+
 ## Reporting a vulnerability
 
-Please open a private report via GitHub's "Report a vulnerability" feature
-on this repository, or contact the maintainers directly, rather than
-filing a public issue. Include:
+Please open a **private** report via GitHub's "Report a vulnerability" feature
+on this repository (`https://github.com/StellarCanary/ProtocolCanary-Action/security/advisories/new`),
+or contact the maintainers directly, rather than filing a public issue. A
+public issue may expose other users before a fix is available.
+
+Include in your report:
 
 - a description of the issue and its impact;
-- steps to reproduce;
+- the affected component (e.g. `src/canary.ts`, the checksum-verification
+  path, the child-process environment filter);
+- steps to reproduce or a proof-of-concept (can be a private draft PR if
+  code changes are needed to demonstrate the issue);
 - the affected version or commit.
 
-We aim to acknowledge new reports within **5 business days**. After
-acknowledging a report, we will work with you on a fix and disclosure
-timeline before any public write-up.
+### Response timeframes
 
-This is a single-maintainer, pre-1.0 project, so the 5-business-day target
-is for the initial acknowledgement only, not for a fix: a fix and its
-release depend on the severity and complexity of the issue. If you have
-not received an acknowledgement within 5 business days, please follow up
-on your existing private report thread rather than opening a public issue,
-so the report is not lost or unintentionally disclosed.
+| Stage | Target |
+| --- | --- |
+| Initial acknowledgement | **5 business days** from first report |
+| Severity triage and scope confirmation | **10 business days** |
+| Fix available (critical/high) | Best effort; depends on complexity |
+| Public disclosure | Coordinated with the reporter after a fix is released |
+
+This is a single-maintainer, pre-1.0 project. The 5-business-day target
+is for the initial acknowledgement only, not for a fix. Fix timelines
+depend on severity and complexity:
+
+- **Critical / High** — treated as the highest priority; a patch release is
+  the goal before public disclosure.
+- **Medium** — fixed in the next planned release.
+- **Low / Informational** — may be batched with other changes.
+
+If you have not received an acknowledgement within 5 business days, please
+follow up on your existing private report thread rather than opening a public
+issue, so the report is not lost or unintentionally disclosed.
+
+We will work with you on a fix and coordinated disclosure timeline before any
+public write-up. If you would like credit in the release notes or advisory,
+say so in your report.
 
 
 ### Experimental pull request comment security
