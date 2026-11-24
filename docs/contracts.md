@@ -20,6 +20,47 @@ incomplete or waits on a CLI release. The table separates the two.
 | [CF-07 Project roots](https://github.com/StellarCanary/Protocol-Canary/blob/main/docs/contracts/cf-07-project-roots-and-detection.md) | Maps a `working-directory` input to the CLI's `--project-root`. | Implemented |
 | [CF-08 Viewer and Action](https://github.com/StellarCanary/Protocol-Canary/blob/main/docs/contracts/cf-08-viewer-and-action.md) | Defines the inputs, outputs, failure mapping, diagnostics redaction and summary limits. Current inputs and outputs are listed below. | Partly implemented; compare the contract with `action.yml` for what remains |
 
+## Engine exit codes
+
+The engine (`stellar-canary`) exits with one of the following codes. The Action
+maps each code to a workflow outcome; the mapping is implemented in `action.yml`
+and tested by `tests/unit/exit-codes.test.ts`.
+
+| Exit code | Meaning | Action behaviour |
+|---|---|---|
+| `0` | Pass — all checks ran and passed. | Sets `status=pass`; does not fail the job unless `fail-on-warning` applies. |
+| `1` | Fail — one or more checks produced a failure result. | Sets `status=fail`; fails the job. |
+| `2` | Usage / configuration error — the CLI was invoked incorrectly or rejected the config. | Sets `status=execution-failed`; fails the job. Exit code 2 is also produced in 0.2.0+ when no fixture applies and `--allow-empty` was not passed. |
+| `3` | Execution error — the CLI ran but could not complete (e.g. the project root was unreadable or an RPC endpoint was unreachable). | Sets `status=execution-failed`; fails the job. |
+| `4` | Protocol mismatch — the target protocol differs from the protocol observed on the network. Added in v0.2.0. | Sets `status=execution-failed`; fails the job. |
+| `5` | Missing binary — the requested `stellar-canary` binary could not be found after installation. | Sets `status=execution-failed`; fails the job. |
+
+Any exit code not listed above (including negative values or codes above 5) is
+treated as an execution error equivalent to exit code 3.
+
+## Execution receipt fields
+
+When `generate-receipt: true`, the Action writes a JSON file at the path given
+by the `receipt-path` output. The receipt follows `receiptVersion: 1`
+(`src/receipt.ts`). Every top-level field is present by construction; string
+fields fall back to the literal `"unknown"` when the report did not carry the
+value.
+
+| Field | Type | Description |
+|---|---|---|
+| `receiptVersion` | `number` (always `1`) | Schema version pin. Consumers must reject receipts with an unrecognised version. |
+| `engineVersion` | `string` | The `toolVersion` from the Canary report — the engine's own semver string. `"unknown"` when the report omits it. |
+| `engineCommit` | `string` | Build commit of the engine binary (`run.toolBuildCommit` or the future `engineCommit` report field). `"unknown"` for engines that predate E-055. |
+| `packDigest` | `string` | Digest identifying the fixture pack (`fixturePack.digest` or the future `packDigest` field). `"unknown"` for engines that predate E-071. |
+| `protocol` | `number \| "unknown"` | Protocol the run targeted (`targetProtocol`), as a positive integer, or `"unknown"` when absent. |
+| `observedProtocol` | `number \| "unknown"` | Protocol observed live on the network (`network.observedProtocol`), or `"unknown"` for offline runs. |
+| `timestamp` | `string` | ISO-8601 UTC timestamp recorded when the receipt was built. |
+
+All string fields pass through the CF-08 redaction boundary: recognised
+credential shapes and machine-specific absolute filesystem paths are replaced
+with `[REDACTED]`. Semantic identifiers (hex commit SHAs, `sha256:` digests,
+semver, ISO-8601 timestamps) are preserved verbatim.
+
 ## Facts about this repository that the contracts rely on
 
 Checked against `main` at `f5b9072` on 2026-11-20. `action.yml` is the

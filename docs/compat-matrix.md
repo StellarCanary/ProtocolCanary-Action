@@ -63,6 +63,39 @@ The collector downloads and validates each cell artifact against the prepared ma
 
 The collector uploads `compat-matrix.json`, a machine-readable object containing `schemaVersion`, `actionCommit`, `runUrl`, `executionMode`, `expectedCellCount`, `cells`, `issues`, `hasFailures`, and the Markdown `table`. Each cell contains its refs, classification, reason, evidence URL, and validated `facts` (or `null` when facts could not be read). Cell artifacts and the classification report are retained for 14 days. The job summary contains the human-readable table.
 
+## Engine binary version support
+
+The table below summarises which engine releases the matrix has successfully
+built and checked, the minimum Action version required to use each, and the
+supported protocol targets. Cells marked **not tested** are outside the matrix's
+current scope; see [`docs/releases.md`](releases.md) for the per-release run
+record.
+
+| Engine version | Supported protocols | Minimum Action version | Notes |
+|---|---|---|---|
+| `v0.1.1` | 28 | v1 | Protocol 28 offline XDR only. Rejects `LedgerEntry` and `i128` fixtures absent from the `protocol-28` tag. See [verified compatibility limits](#verified-compatibility-limits). |
+| `v0.2.0` | 28 | v1 | Protocol 28 offline XDR only. Same `LedgerEntry` / `i128` limits as `v0.1.1`. Adds optional `source` field to results and a result cache. `--allow-empty` required for no-fixture invocations. |
+| `main` (HEAD) | 28, 29 | v1 | Adds `LedgerEntry` and `i128` support; tested against Fixtures `main`. Live protocol 29 tested separately via `weekly-live.yml`. Not a release; use a pinned commit sha. |
+
+### CLI flag changes between engine releases
+
+The table below documents CLI flags whose syntax or semantics changed across
+major and minor engine releases. Flags absent from a row were not changed in
+that release.
+
+| Flag | `v0.1.1` | `v0.2.0` | Notes |
+|---|---|---|---|
+| _(no-fixture invocation)_ | Exits `0` with an empty report when no fixture applies. | Exits `2`; use `--allow-empty` to restore the old exit code. | The Action does not forward `--allow-empty` today (see [engine-0.2.0-compatibility-plan.md](engine-0.2.0-compatibility-plan.md)). |
+| _(symlinked fixture dirs)_ | Accepted. | Rejected; exits `4`. | Affects any fixture directory containing symbolic links, junctions, or unsafe payload paths. |
+| _(unknown config key)_ | Accepted with a warning (or silently). | Rejected; exits `2`. | A `.stellar-canary.toml` with an unknown section or key is now a hard error. |
+| `--json` / result cache | Not present. | Results cached in `.stellar-canary-cache/`; results gain an optional `source` field. | Cache is opt-in by default; the `source` field is additive and the Action reads it defensively. |
+
+The minimum Action version column in the engine table reflects the oldest
+`action.yml` that correctly maps each exit code. If you consume this Action via
+the `@v1` floating tag, you automatically receive the latest mapping. If you pin
+by commit sha, verify the mapping table in `action.yml` covers the exit codes of
+the engine version you use.
+
 ## Regression tests
 
 `tests/unit/compat-matrix-inputs.test.ts` covers ref splitting and validation. `tests/unit/compat-matrix-results.test.ts` covers fact creation, raw artifact validation, report-less Soroban and XDR fixture parse errors, transport failures, and collection. `tests/unit/classify-compat.test.ts` covers classification boundaries and workflow failure behavior.

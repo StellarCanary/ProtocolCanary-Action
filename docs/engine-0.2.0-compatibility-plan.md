@@ -95,6 +95,67 @@ what changed in that record, with no plan decision edited:
   against a compromised release; this Action does not verify signatures because
   none exist.
 
+## Report schema field differences between v0.1 and v0.2
+
+This section documents the differences in report structure between engine
+v0.1.x and v0.2.0, as recorded in
+`tests/fixtures/report-schema-divergences.json` and reflected in
+`src/output.ts` (`parseReport`). The Action's `parseReport` function is the
+authoritative consumer; this section explains its tolerances and rejections
+for cross-version compatibility.
+
+### Top-level field changes
+
+| Field | v0.1.x behaviour | v0.2.0 behaviour | Action handling |
+|---|---|---|---|
+| `counts` | Present and matches the JSON Schema's required shape. | May be missing or have missing/non-numeric members. | Tolerated: the Action re-derives all counts from `results` and `skipped`, so a missing or malformed `counts` object is never a rejection reason (divergences `del:counts`, `del:counts.member`, `type:counts`, `type:counts.member`). |
+| `network` | Object or absent. | May be explicit `null` for offline runs. | Tolerated: `network: null` is treated the same as an absent `network` field — an offline run, never an error (divergence `type:network-null`). |
+| `results[i].source` | Field absent. | Optional string indicating how the result was obtained (live or replayed from cache). | The Action reads `source` defensively and treats unknown or missing values as "not live", so a wrong-typed value cannot fake compatibility evidence (divergence `type:results[i].source`). |
+| `run.toolBuildCommit` | May be absent. | Present when the engine records its own build commit. | The Action does not validate the `run` object; this field is copied defensively into the Execution Receipt as `engineCommit` (divergence `del:run.toolBuildCommit`). |
+| `verbose` | May be absent. | Optional boolean. | Informational metadata the Action never reads (divergence `type:verbose`). |
+
+### Deprecated summary properties
+
+The JSON Schema marks `counts` as required, but the Action no longer enforces
+its presence. As of this plan, `counts` is treated as a deprecated convenience
+field: the Action computes all counts from the actual `results` and `skipped`
+arrays, which are the authoritative source. Consumers that read `counts`
+directly should migrate to computing them from `results` and `skipped`.
+
+No `counts` member is deprecated individually — the whole object is optional
+and re-derived if present and inconsistent. A report whose recorded `counts`
+disagree with what `results`/`skipped` actually contain is **rejected** by the
+Action (`probe:counts-disagree`), because doctored or truncated counts could
+mask a failure.
+
+### Fallback behaviour when reading reports across versions
+
+The Action applies the following fallbacks when it encounters a report from an
+engine version that predates a field:
+
+1. **`counts` absent or malformed** — Re-derived from `results` and `skipped`.
+   The report is not rejected unless the re-derived counts disagree with
+   explicitly recorded counts.
+2. **`network: null`** — Treated as an offline run; `observedProtocol` is set
+   to `"unknown"` in the receipt.
+3. **`results[i].source` absent or wrong type** — Treated as `"not live"`.
+   The result's compatibility verdict is unaffected.
+4. **`run.toolBuildCommit` absent** — `engineCommit` in the receipt falls back
+   to the future `engineCommit` top-level field, then to `"unknown"`.
+5. **`fixturePack.digest` absent** — `packDigest` in the receipt falls back to
+   the future `packDigest` top-level field, then to `"unknown"`.
+6. **`project.type` outside the controlled vocabulary** — Accepted as opaque
+   text per CF-01; the Action only requires it to be a non-empty string.
+7. **`results[i].protocol` or `results[i].durationMs` non-integer or below
+   schema minimum** — Accepted; both fields are informational and are never
+   used to compute a compatibility verdict.
+
+Fields that are **always required** regardless of engine version:
+`toolVersion` (non-empty string), `project.name` (non-empty string),
+`results[i].fixtureId` (string or explicit `null`),
+`network.name` when `network` is non-null (non-empty string). Any report
+missing these is rejected regardless of the engine version that produced it.
+
 ## Protocol 29 live workflow prerequisite (2026-11-03)
 
 The weekly workflow now pins Fixtures release
