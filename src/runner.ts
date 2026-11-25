@@ -714,6 +714,9 @@ export function runCheck(
       }
     };
 
+    child.stdout.on("error", () => {});
+    child.stderr.on("error", () => {});
+
     child.stdout.on("data", (chunk: string | Buffer) => {
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
       if (stdoutExceeded) {

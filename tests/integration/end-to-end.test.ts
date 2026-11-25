@@ -92,14 +92,18 @@ vi.mock("@actions/artifact", () => ({
 // must degrade gracefully (see version.test.ts), and this suite only
 // cares about what happens downstream of installation.
 vi.mock("node:https", () => ({
-  get: vi.fn((_url: string, _options: unknown, callback: (response: unknown) => void) => {
+  get: vi.fn((_url: string, _options: unknown, callback?: (response: unknown) => void) => {
+    const cb = typeof _options === "function" ? _options : callback;
     const response = {
       statusCode: 500,
+      headers: {},
       setEncoding: () => undefined,
       resume: () => undefined,
       on: () => undefined,
     };
-    queueMicrotask(() => callback(response));
+    if (cb) {
+      queueMicrotask(() => cb(response));
+    }
     return { on: () => undefined, destroy: () => undefined };
   }),
 }));

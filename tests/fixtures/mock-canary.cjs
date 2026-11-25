@@ -369,10 +369,13 @@ switch (scenario) {
   }
 
   case "timeout": {
-    setTimeout(() => {
-      process.stdout.write(JSON.stringify(baseReport({})) + "\n");
-      process.exit(0);
-    }, 10_000);
+    process.on("SIGTERM", () => {
+      process.exit(143);
+    });
+    process.on("SIGINT", () => {
+      process.exit(130);
+    });
+    setInterval(() => {}, 1000);
     break;
   }
 
