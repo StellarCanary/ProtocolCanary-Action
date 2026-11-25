@@ -51,7 +51,7 @@ jobs:
         # separator, executable-name, and line-ending regressions surface on
         # every pull request, not only on Linux.
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [20, 22]
+        node-version: [22, 24]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
