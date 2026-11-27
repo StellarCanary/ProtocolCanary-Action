@@ -127,3 +127,37 @@ jobs:
           sample=$(find "$dir" -type f -name '*.json' | head -1)
           grep -q '"protocol"' "$sample" || fail "the downloaded report $(basename "$sample") is not a Protocol Canary JSON report"
           echo "conformance contract satisfied: exit-code=0 diff-verdict=${verdict} report=$(basename "$report")"
+
+      - name: Emit failure diagnostics summary
+        id: failure-diagnostics
+        if: failure()
+        shell: bash
+        env:
+          CANARY_OUTCOME: ${{ needs.canary.result }}
+          CANARY_EXIT_CODE: ${{ needs.canary.outputs.exit-code }}
+          CANARY_DIFF_VERDICT: ${{ needs.canary.outputs.diff-verdict }}
+          CANARY_REPORT_PATH: ${{ needs.canary.outputs.report-path }}
+          FETCH_OUTCOME: ${{ steps.fetch-report-artifact.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify-outputs.outcome }}
+        run: |
+          set -euo pipefail
+          echo "::error::Reusable workflow conformance check failed (canary=${CANARY_OUTCOME:-unknown}, fetch=${FETCH_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}). See job step summary for troubleshooting diagnostics."
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### Reusable workflow conformance failure diagnostics"
+              echo ""
+              echo "| Signal | Value |"
+              echo "| --- | --- |"
+              echo "| \`canary\` job result | \`${CANARY_OUTCOME:-unknown}\` |"
+              echo "| \`canary\` exit-code output | \`${CANARY_EXIT_CODE:-unset}\` |"
+              echo "| \`canary\` diff-verdict output | \`${CANARY_DIFF_VERDICT:-unset}\` |"
+              echo "| \`canary\` report-path output | \`${CANARY_REPORT_PATH:-unset}\` |"
+              echo "| \`fetch-report-artifact\` step outcome | \`${FETCH_OUTCOME:-unknown}\` |"
+              echo "| \`verify-outputs\` step outcome | \`${VERIFY_OUTCOME:-unknown}\` |"
+              echo ""
+              echo "#### Troubleshooting"
+              echo "- Inspect the \`canary\` job logs to verify \`.github/workflows/reusable-canary-check.yml\` completed and uploaded the \`stellar-protocol-canary-report\` artifact."
+              echo "- Verify \`exit-code\` is \`0\` (documented contract \`{0, 1}\`), \`diff-verdict\` is \`not-requested\` or \`unavailable\`, and \`report-path\` is non-empty."
+              echo "- Reproduce locally with \`npm test -- tests/unit/reusable-workflow-conformance.test.ts\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
